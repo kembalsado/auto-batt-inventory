@@ -116,3 +116,69 @@ export async function recordStockOut(
 
   return { movementId: result.movement_id };
 }
+
+/** Thrown when attempting to void a movement that has already been voided. */
+export class AlreadyVoidedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyVoidedError";
+  }
+}
+
+/**
+ * Thrown when attempting to void an IN movement whose batch has already
+ * had stock sold from it — voiding would silently corrupt a sale that
+ * already allocated against that batch, so it's rejected outright rather
+ * than partially reversed.
+ */
+export class BatchAlreadySoldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BatchAlreadySoldError";
+  }
+}
+
+/**
+ * Voids a mistaken IN or OUT movement via the `void_movement` Postgres
+ * function (see supabase/migrations/0008_void_movement.sql). The movement
+ * row is never deleted — it stays for history with `voided_at`/`voided_by`
+ * set — and whichever batch quantity it affected is put back:
+ *
+ * - Voiding an IN zeroes out its batch's `qty_remaining`, but only if
+ *   nothing has been sold from that batch yet (`qty_remaining ===
+ *   qty_received`); otherwise it rejects with `BatchAlreadySoldError`
+ *   rather than partially reversing.
+ * - Voiding an OUT restores `qty_allocated` back onto every batch it drew
+ *   from, via its `movement_allocations` rows. This is always safe.
+ *
+ * Voiding is not repeatable: voiding an already-voided movement rejects
+ * with `AlreadyVoidedError`.
+ *
+ * As with `recordStockIn`/`recordStockOut`, the audit write (action
+ * `movement.voided`) happens inside the SQL function itself, atomically
+ * with the batch/movement changes — not bolted on here afterward.
+ *
+ * This intentionally does NOT create a replacement entry or link one via
+ * `reverses_movement_id` — the correct replacement, if any, is just a
+ * normal new IN/OUT recorded afterward by the user (YAGNI per the plan).
+ */
+export async function voidMovement(
+  supabase: SupabaseClient,
+  actorId: string,
+  movementId: string
+): Promise<void> {
+  const { error } = await supabase.rpc("void_movement", {
+    p_movement_id: movementId,
+    p_actor_id: actorId,
+  });
+
+  if (error) {
+    if (/already voided/i.test(error.message)) {
+      throw new AlreadyVoidedError(error.message);
+    }
+    if (/already been sold/i.test(error.message)) {
+      throw new BatchAlreadySoldError(error.message);
+    }
+    throw error;
+  }
+}
