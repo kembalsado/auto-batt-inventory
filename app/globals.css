@@ -5,6 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Auto Batt brand colors, sampled from the logo. Primary accent (green)
+     and near-black text/logo color (ink) — used by components/sidebar.tsx
+     and the printable stock list header (Task 13). Constant across light
+     and dark mode, so defined directly rather than via a :root/.dark pair. */
+  --color-brand-green: #019342;
+  --color-brand-ink: #201a1a;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);

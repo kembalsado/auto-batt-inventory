@@ -11,7 +11,19 @@ const PUBLIC_PATHS = ["/login"];
  * `@supabase/ssr` Next.js middleware recipe.
  */
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // Next.js gives Server Components no built-in way to read the current
+  // pathname (next/headers exposes cookies/headers/draftMode only), so the
+  // dashboard layout (app/(dashboard)/layout.tsx) needs it forwarded via a
+  // request header to decide whether an assistant is hitting an owner-only
+  // route. Rebuilt from `request` each time below so it reflects any
+  // cookie refresh Supabase performs via setAll.
+  function withPathname() {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-pathname", request.nextUrl.pathname);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  let response = withPathname();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,7 +37,7 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          response = NextResponse.next({ request });
+          response = withPathname();
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
