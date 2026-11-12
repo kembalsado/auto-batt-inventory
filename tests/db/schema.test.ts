@@ -1,4 +1,3 @@
-import { expect, test } from "vitest";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 test("app_settings has exactly one seeded row", async () => {
