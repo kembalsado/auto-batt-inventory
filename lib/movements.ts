@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { recordAudit } from "@/lib/audit";
 
 /** Fields accepted by `recordStockIn`. */
 export interface RecordStockInInput {
@@ -19,10 +18,12 @@ export interface RecordStockInResult {
 
 /**
  * Records a stock IN: creates a new purchase batch
- * (`qty_remaining = qty_received = qty`) and its matching IN movement,
- * atomically, via the `record_stock_in` Postgres function (see
- * supabase/migrations/0006_record_stock_in.sql) — then records an
- * audit_log entry for the movement.
+ * (`qty_remaining = qty_received = qty`), its matching IN movement, AND its
+ * audit_log entry, all atomically via the `record_stock_in` Postgres
+ * function (see supabase/migrations/0006_record_stock_in.sql). The audit
+ * write happens inside that SQL function, not here — so it's part of the
+ * same transaction as the stock change and can't be skipped by a caller
+ * that invokes the RPC directly instead of going through this wrapper.
  *
  * This is the only producer of 'purchase' batches; FIFO allocation
  * (Task 9) and void (Task 10) consume what this creates.
@@ -48,22 +49,6 @@ export async function recordStockIn(
   }
 
   const result = data as { batch_id: string; movement_id: string };
-
-  // Look up the SKU so the audit summary reads clearly (e.g. "IN 10x
-  // AB-001 @ ₱1000") rather than a bare item id.
-  const { data: item } = await supabase
-    .from("items")
-    .select("sku")
-    .eq("id", input.itemId)
-    .single();
-
-  await recordAudit(supabase, {
-    actorId,
-    action: "movement.created",
-    entityType: "stock_movement",
-    entityId: result.movement_id,
-    summary: `IN ${input.qty}x ${item?.sku ?? input.itemId} @ ₱${input.unitCost}`,
-  });
 
   return { movementId: result.movement_id, batchId: result.batch_id };
 }

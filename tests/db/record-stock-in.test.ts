@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
@@ -120,4 +121,56 @@ test("recordStockIn writes an audit log entry", async () => {
 
   expect(log?.action).toBe("movement.created");
   expect(log?.entity_type).toBe("stock_movement");
+});
+
+test("record_stock_in RPC alone (no lib/movements.ts wrapper) writes the audit log entry — the audit write is inside the SQL transaction, not bolted on by application code", async () => {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .rpc("record_stock_in", {
+      p_item_id: itemId,
+      p_qty: 3,
+      p_unit_cost: 300,
+      p_batch_date: "2026-11-14",
+      p_note: null,
+      p_actor_id: ASSISTANT_ID,
+    })
+    .single();
+
+  expect(error).toBeNull();
+  const result = data as { batch_id: string; movement_id: string };
+  createdBatchIds.push(result.batch_id);
+  createdMovementIds.push(result.movement_id);
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", result.movement_id)
+    .single();
+
+  expect(log?.action).toBe("movement.created");
+  expect(log?.entity_type).toBe("stock_movement");
+  expect(log?.summary).toContain("IN 3x");
+});
+
+test("anon key cannot call record_stock_in via RPC (permission denied, not a business-logic error)", async () => {
+  const anon = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  const { error } = await anon.rpc("record_stock_in", {
+    p_item_id: itemId,
+    p_qty: 1,
+    p_unit_cost: 1,
+    p_batch_date: "2026-11-14",
+    p_note: null,
+    p_actor_id: ASSISTANT_ID,
+  });
+
+  expect(error).not.toBeNull();
+  // Postgres permission-denied is SQLSTATE 42501, surfaced by PostgREST
+  // as a 401/403-class error — must NOT be the 23503 FK-violation (or any
+  // other business-logic error) an authenticated/admin call would get.
+  expect(error?.code).toBe("42501");
 });
