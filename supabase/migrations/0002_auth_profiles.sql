@@ -37,14 +37,26 @@ create policy "profiles_select_own"
   to authenticated
   using (id = auth.uid());
 
+-- is_owner: looks up whether a given user id has role = 'owner'. Used by
+-- profiles_select_all_for_owner below. Must be security definer so the
+-- lookup it runs bypasses RLS on `profiles` — otherwise a policy's USING
+-- clause querying `profiles` from inside a policy ON `profiles` triggers
+-- Postgres's infinite-recursion detection (error 42P17) on every select.
+create function is_owner(user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from profiles where id = user_id and role = 'owner'
+  );
+$$;
+
 -- RLS: an owner can read every profile row (needed for role-gated nav and
 -- the Add User / user list screen in Task 15).
 create policy "profiles_select_all_for_owner"
   on profiles for select
   to authenticated
-  using (
-    exists (
-      select 1 from profiles p
-      where p.id = auth.uid() and p.role = 'owner'
-    )
-  );
+  using (is_owner(auth.uid()));
