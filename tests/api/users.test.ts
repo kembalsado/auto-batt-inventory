@@ -1,0 +1,187 @@
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createBrowserClient } from "@/lib/supabase/client";
+
+// This file exercises the real `POST /api/users` route over HTTP (not by
+// importing the handler directly), because the thing under test — the
+// route reading the caller's own session cookie and rejecting a non-owner
+// — can only be proven end-to-end. It therefore needs a live `next dev`
+// server on localhost:3000, the same documented, pre-existing dependency
+// as tests/auth/route-protection.test.tsx (see that file/its task reports:
+// it fails with ECONNREFUSED whenever no dev server is running, which is
+// expected and unrelated to any particular task).
+const BASE_URL = "http://localhost:3000";
+
+// Signs in via the real browser client so @supabase/ssr writes an actual
+// session cookie to `document.cookie` (vitest's jsdom environment defaults
+// its origin to http://localhost:3000, matching the dev server above), then
+// hands back the Cookie header to replay with plain `fetch` — the same
+// technique used to verify Task 4's dashboard shell against a live server.
+async function signInCookieHeader(
+  email: string,
+  password: string
+): Promise<string> {
+  const supabase = createBrowserClient();
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) throw error;
+  return document.cookie;
+}
+
+// Every user this file creates — test fixtures (owner/assistant callers)
+// and the ones created *through* the route itself — is tracked here and
+// deleted in afterAll, so the suite is safely rerunnable without a manual
+// `supabase db reset` in between.
+const createdUserIds: string[] = [];
+
+afterAll(async () => {
+  const admin = createAdminClient();
+  // Deletion order matters, and both FKs are non-cascading:
+  // audit_log.actor_id -> profiles(id), and profiles.id -> auth.users(id).
+  await admin.from("audit_log").delete().in("actor_id", createdUserIds);
+  await admin.from("profiles").delete().in("id", createdUserIds);
+  await Promise.all(
+    createdUserIds.map((id) => admin.auth.admin.deleteUser(id))
+  );
+});
+
+test("owner can create a new assistant user", async () => {
+  const admin = createAdminClient();
+  const { data: owner } = await admin.auth.admin.createUser({
+    email: "test-users-owner-1@example.com",
+    password: "test-password-123",
+    email_confirm: true,
+    user_metadata: { role: "owner" },
+  });
+  createdUserIds.push(owner!.user!.id);
+
+  const cookie = await signInCookieHeader(
+    "test-users-owner-1@example.com",
+    "test-password-123"
+  );
+
+  const res = await fetch(`${BASE_URL}/api/users`, {
+    method: "POST",
+    headers: { Cookie: cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      email: "test-users-new-assistant@example.com",
+      password: "temp-pass-123",
+      fullName: "Task15 New Assistant",
+      role: "assistant",
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const body = await res.json();
+  expect(body.id).toBeTruthy();
+  createdUserIds.push(body.id);
+
+  // Scoped by full_name, not just "the most recent profile" — this file's
+  // other tests also create profiles, and a stray match from one of them
+  // could otherwise make this pass/fail for the wrong reason.
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("full_name", "Task15 New Assistant")
+    .single();
+  expect(profile?.role).toBe("assistant");
+});
+
+test("owner can create a new owner user", async () => {
+  const admin = createAdminClient();
+  const { data: owner } = await admin.auth.admin.createUser({
+    email: "test-users-owner-2@example.com",
+    password: "test-password-123",
+    email_confirm: true,
+    user_metadata: { role: "owner" },
+  });
+  createdUserIds.push(owner!.user!.id);
+
+  const cookie = await signInCookieHeader(
+    "test-users-owner-2@example.com",
+    "test-password-123"
+  );
+
+  const res = await fetch(`${BASE_URL}/api/users`, {
+    method: "POST",
+    headers: { Cookie: cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      email: "test-users-new-owner@example.com",
+      password: "temp-pass-123",
+      fullName: "Task15 New Owner",
+      role: "owner",
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const body = await res.json();
+  expect(body.id).toBeTruthy();
+  createdUserIds.push(body.id);
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("full_name", "Task15 New Owner")
+    .single();
+  expect(profile?.role).toBe("owner");
+});
+
+test("an assistant cannot create a user", async () => {
+  const admin = createAdminClient();
+  const { data: assistant } = await admin.auth.admin.createUser({
+    email: "test-users-assistant@example.com",
+    password: "test-password-123",
+    email_confirm: true,
+  });
+  createdUserIds.push(assistant!.user!.id);
+
+  const cookie = await signInCookieHeader(
+    "test-users-assistant@example.com",
+    "test-password-123"
+  );
+
+  const res = await fetch(`${BASE_URL}/api/users`, {
+    method: "POST",
+    headers: { Cookie: cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      email: "test-users-rejected@example.com",
+      password: "temp-pass-123",
+      fullName: "Should Not Be Created",
+      role: "assistant",
+    }),
+  });
+
+  expect(res.status).toBe(403);
+
+  // Not just the status code — confirm the write genuinely never happened.
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("full_name", "Should Not Be Created")
+    .maybeSingle();
+  expect(profile).toBeNull();
+});
+
+test("an unauthenticated request is rejected", async () => {
+  // middleware.ts redirects any unauthenticated request outside
+  // PUBLIC_PATHS to /login before it ever reaches the route handler — the
+  // same behavior tests/auth/route-protection.test.tsx proves for
+  // dashboard pages. With `redirect: "manual"` (not followed), a passing
+  // fetch here never reaches app/api/users/route.ts's own 401 branch,
+  // which is why it's not exercised directly by an HTTP test: it only
+  // matters if middleware's path coverage ever changes.
+  const res = await fetch(`${BASE_URL}/api/users`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: "test-users-unauth@example.com",
+      password: "temp-pass-123",
+      fullName: "Unauth",
+      role: "assistant",
+    }),
+  });
+  expect(res.status).toBe(307);
+  expect(res.headers.get("location")).toContain("/login");
+});
