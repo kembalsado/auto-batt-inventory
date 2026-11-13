@@ -329,6 +329,71 @@ test("two concurrent OUT requests against the same 10-unit batch never jointly o
   expect(outMovements?.[0].quantity).toBe(7);
 });
 
+test("an authenticated assistant cannot read movement_allocations at all — unit_cost_at_allocation is locked down the same way batches.unit_cost is", async () => {
+  const admin = createAdminClient();
+
+  // Seed a real allocation row carrying a real cost, so this test is
+  // proving "the cost is there but unreachable", not "the table happened
+  // to be empty".
+  const seedItem = await createItem(admin, ASSISTANT_ID, {
+    sku: `AB-${runId}-alloc`,
+    name: "Allocation Lockdown Battery",
+    categoryId: createdCategoryIds[0],
+    unit: "pcs",
+  });
+  createdItemIds.push(seedItem.id);
+  await recordStockIn(admin, ASSISTANT_ID, {
+    itemId: seedItem.id,
+    qty: 5,
+    unitCost: 4242,
+    batchDate: "2026-07-01",
+  });
+  const { movementId } = await recordStockOut(admin, ASSISTANT_ID, {
+    itemId: seedItem.id,
+    qty: 2,
+    movementDate: "2026-07-02",
+  });
+
+  // The service-role client still sees the cost — this is a grant on
+  // anon/authenticated only, not a blanket table lockout.
+  const { data: adminRows } = await admin
+    .from("movement_allocations")
+    .select("unit_cost_at_allocation")
+    .eq("movement_id", movementId);
+  expect(adminRows?.[0]?.unit_cost_at_allocation).toBe(4242);
+
+  const assistantClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        storageKey: `test-${randomUUID()}`,
+      },
+    }
+  );
+  const { error: signInError } = await assistantClient.auth.signInWithPassword({
+    email: `test-stock-out-assistant-${runId}@example.com`,
+    password: "test-password-123",
+  });
+  expect(signInError).toBeNull();
+
+  // Before supabase/migrations/0011_movement_allocations_lockdown.sql this
+  // returned the real 4242 — 0007's `using (true)` SELECT policy was
+  // row-level only, and Task 11's cost lockdown only covered `batches`.
+  const direct = await assistantClient
+    .from("movement_allocations")
+    .select("unit_cost_at_allocation")
+    .eq("movement_id", movementId);
+  expect(direct.error?.code).toBe("42501");
+  expect(direct.data).toBeNull();
+
+  const wildcard = await assistantClient.from("movement_allocations").select("*");
+  expect(wildcard.error?.code).toBe("42501");
+  expect(wildcard.data).toBeNull();
+});
+
 test("anon key cannot call record_stock_out via RPC (permission denied, not a business-logic error)", async () => {
   const anon = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

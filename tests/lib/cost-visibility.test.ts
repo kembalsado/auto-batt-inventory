@@ -307,6 +307,25 @@ test("batches_for_viewer (not getItemBatchesForViewer) nulls unit_cost for an as
   expect(data?.qty_remaining).toBe(10);
 });
 
+// 0010 granted batches_for_viewer to `authenticated` but never revoked
+// Supabase's default grant to `anon`. In practice anon's query failed
+// anyway, because the view's CASE calls can_see_cost(), whose EXECUTE
+// 0010 did revoke — but that left one single point of defense in front of
+// cost data. 0011 revokes the view grant too, so the denial now comes
+// from the view itself.
+test("anon has no grant on batches_for_viewer at all — not merely blocked by can_see_cost", async () => {
+  const anonClient = createAnonClient();
+
+  const { data, error } = await anonClient
+    .from("batches_for_viewer")
+    .select("*")
+    .eq("id", batchId);
+
+  expect(error?.code).toBe("42501");
+  expect(error?.message).toMatch(/permission denied for view batches_for_viewer/i);
+  expect(data).toBeNull();
+});
+
 test("RLS: an assistant can read app_settings but cannot update it", async () => {
   const assistantClient = createAnonClient();
   const { error: signInError } = await assistantClient.auth.signInWithPassword({

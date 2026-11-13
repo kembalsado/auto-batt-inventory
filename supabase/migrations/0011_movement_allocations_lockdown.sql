@@ -1,0 +1,76 @@
+-- Auto Batt Inventory — movement_allocations cost lockdown (+ two
+-- related grant gaps found by the final whole-branch review)
+--
+-- 1. movement_allocations leaked cost to an assistant.
+--
+--    0007_record_stock_out.sql gave `movement_allocations` a row-level
+--    SELECT policy with `using (true)`, and nothing ever narrowed the
+--    table's column grants. Task 11's cost lockdown
+--    (0010_batches_cost_column_lockdown.sql) closed exactly this class
+--    of hole on `batches.unit_cost` but never touched the sibling table
+--    that records `unit_cost_at_allocation` — the cost of everything
+--    actually sold. Verified live before this migration: an
+--    authenticated assistant session with show_cost_to_assistant = false
+--    could still run
+--      select unit_cost_at_allocation from movement_allocations
+--    directly against PostgREST and get real values, bypassing the app
+--    entirely — the same bypass Task 11 spent a fix round closing.
+--
+--    Unlike `batches`, there is nothing here worth keeping readable: no
+--    application code reads `movement_allocations` at all (grep confirms
+--    only comments reference it), and every consumer that needs
+--    allocation data — `record_stock_out` (0007) and `void_movement`
+--    (0008) — is a SECURITY DEFINER function running as the function
+--    owner, so it reads and writes this table with the *owner's*
+--    privileges and is completely unaffected by the revoke below. The
+--    service_role client (tests' cleanup, any future admin path) keeps
+--    its own grant and is likewise untouched.
+--
+--    So this revokes SELECT on the whole table rather than re-granting
+--    the non-cost columns the way 0010 had to for `batches` — the
+--    narrowest grant that still satisfies every real caller is "none".
+--
+--    The matching row-level SELECT policy is dropped too. It is already
+--    dead once the table grant is gone (Postgres checks the grant first),
+--    but leaving a `using (true)` policy behind would misdescribe the
+--    intent and would silently reopen the hole the moment anyone
+--    re-granted SELECT. The INSERT policy is deliberately left in place:
+--    0007's comment explains it exists for a future direct-insert path,
+--    and inserting an allocation row discloses nothing.
+revoke select on movement_allocations from anon, authenticated;
+drop policy "movement_allocations_select_authenticated" on movement_allocations;
+
+-- 2. batches_for_viewer still carried Supabase's default grant to anon.
+--
+--    The view (0010) is the only sanctioned way to read `unit_cost`.
+--    0010 granted SELECT to `authenticated` but never revoked the
+--    default grant Supabase's init scripts hand `anon` on new objects in
+--    `public`. In practice anon querying it errored anyway — the view's
+--    CASE calls `can_see_cost()`, whose EXECUTE 0010 *did* revoke from
+--    anon — but that left a single point of defense protecting cost
+--    data. Remove the grant as well, so the view is closed to anon on
+--    its own terms.
+revoke all on batches_for_viewer from anon;
+
+-- 3. is_owner(uuid) was executable by anon.
+--
+--    Every other SECURITY DEFINER function in this project
+--    (record_stock_in, record_stock_out, void_movement, can_see_cost) is
+--    explicitly revoked from public + anon and re-granted to
+--    authenticated only — anon's EXECUTE comes from Supabase's own
+--    ALTER DEFAULT PRIVILEGES grant, independent of PUBLIC, which is why
+--    the revoke has to name `anon` and not just `public` (see 0006's
+--    header note). is_owner(), defined back in 0002 before that
+--    convention existed, was missed. Verified live before this
+--    migration: an anon session could call it via RPC and learn whether
+--    any given user id is an owner — a small but real
+--    information-disclosure gap, with no reason for anon to ask.
+--
+--    `authenticated` keeps EXECUTE because RLS policy expressions are
+--    evaluated with the querying role's privileges, and the policies in
+--    0002/0003 (profiles_select_all_for_owner, audit_log_select_owner,
+--    and the one added in 0012) call is_owner() from their USING clauses
+--    as `authenticated`. service_role bypasses RLS entirely and so never
+--    evaluates those expressions.
+revoke execute on function is_owner(uuid) from public, anon;
+grant execute on function is_owner(uuid) to authenticated;
