@@ -5,15 +5,22 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* Auto Batt brand colors, sampled from the logo. Primary accent (green)
-     and near-black text/logo color (ink) — used by components/sidebar.tsx
-     and the printable stock list header (Task 13). Constant across light
-     and dark mode, so defined directly rather than via a :root/.dark pair. */
-  --color-brand-green: #019342;
-  --color-brand-ink: #201a1a;
+  /* Auto Batt brand palette — "Refined Green": a muted, professional
+     version of the logo's green plus a warm gold accent. Used by
+     components/sidebar.tsx, the printable stock list header (Task 13),
+     and the PDF export (app/api/stock-list/pdf/route.tsx, which hardcodes
+     the same hex values since react-pdf can't read CSS variables — keep
+     both in sync if these ever change). Constant across light and dark
+     mode, so defined directly rather than via a :root/.dark pair. */
+  --color-brand-green: #15502f;
+  --color-brand-green-light: #1e6b3f;
+  --color-brand-ink: #1a1a1a;
+  --color-brand-gold: #e8c765;
+  --color-brand-gold-dark: #92661a;
+  --color-brand-warn-bg: #fbf0d9;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-manrope);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -131,6 +138,16 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    /* Set directly off next/font's own variable rather than through the
+       @theme inline font-sans/font-mono tokens above: @theme inline
+       statically inlines referenced values at Tailwind's CSS-processing
+       time, which doesn't see next/font's CSS-Modules-scoped variable
+       (only bound to <html> at request time) — so --font-sans/--font-mono
+       resolved to nothing and every page silently fell back to the
+       browser's default serif font since this app's first commit. This
+       line is what actually puts a font on the page; the @theme tokens
+       above are kept for any future `font-sans`/`font-mono` utility use
+       but don't carry weight on their own. */
+    font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
   }
 }

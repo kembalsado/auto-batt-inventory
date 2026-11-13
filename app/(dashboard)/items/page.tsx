@@ -54,7 +54,11 @@ export default async function ItemsPage() {
         </Link>
       </div>
 
-      <table className="mt-6 w-full text-left text-sm">
+      {/* Table at md and up (same breakpoint the sidebar collapses at);
+          a card list below that, where a 5-column table would overflow
+          a phone's width. Both read the same `rows` — see Stock List and
+          the Activity page for the same split, all for the same reason. */}
+      <table className="mt-6 hidden w-full text-left text-sm md:table">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 font-medium">SKU</th>
@@ -101,6 +105,40 @@ export default async function ItemsPage() {
           )}
         </tbody>
       </table>
+
+      <div className="mt-4 flex flex-col gap-2 md:hidden">
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">No items yet.</p>
+        )}
+        {rows.map((row) => (
+          <Link
+            key={row.id}
+            href={`/items/${row.id}`}
+            className="rounded-lg border border-border bg-card p-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-brand-ink">{row.name}</span>
+              <span className="text-xs text-muted-foreground">{row.sku}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{row.category}</span>
+              <span className="flex items-center gap-2 text-brand-ink">
+                {row.qtyOnHand} {row.unit}
+                {row.isLowStock && (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                    Low
+                  </span>
+                )}
+                {!row.isActive && (
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                    Inactive
+                  </span>
+                )}
+              </span>
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

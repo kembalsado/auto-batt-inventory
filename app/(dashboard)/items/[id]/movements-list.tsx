@@ -66,10 +66,31 @@ export function MovementsList({
     return <p className="mt-6 text-sm text-muted-foreground">No movements yet.</p>;
   }
 
+  function VoidControl({ m }: { m: MovementRow }) {
+    const voided = m.voidedAt != null;
+    if (voided) return null;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => handleVoid(m.id)}
+          disabled={isPending && pendingId === m.id}
+          className="text-sm text-red-600 underline disabled:opacity-50"
+        >
+          {isPending && pendingId === m.id ? "Voiding…" : "Void"}
+        </button>
+        {errorByRow[m.id] && (
+          <p className="mt-1 text-xs text-red-600">{errorByRow[m.id]}</p>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="mt-6">
       <h2 className="text-lg font-medium text-brand-ink">Movement history</h2>
-      <table className="mt-2 w-full max-w-2xl text-sm">
+
+      <table className="mt-2 hidden w-full max-w-2xl text-sm md:table">
         <thead>
           <tr className="text-left text-muted-foreground">
             <th className="py-1 pr-3">Date</th>
@@ -91,25 +112,40 @@ export function MovementsList({
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.note ?? ""}</td>
                 <td className="py-1 pr-3">{voided ? "Voided" : ""}</td>
                 <td className="py-1 pr-3">
-                  {!voided && (
-                    <button
-                      type="button"
-                      onClick={() => handleVoid(m.id)}
-                      disabled={isPending && pendingId === m.id}
-                      className="text-sm text-red-600 underline disabled:opacity-50"
-                    >
-                      {isPending && pendingId === m.id ? "Voiding…" : "Void"}
-                    </button>
-                  )}
-                  {errorByRow[m.id] && (
-                    <p className="mt-1 text-xs text-red-600">{errorByRow[m.id]}</p>
-                  )}
+                  <VoidControl m={m} />
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      <div className="mt-2 flex flex-col gap-2 md:hidden">
+        {movements.map((m) => {
+          const voided = m.voidedAt != null;
+          return (
+            <div
+              key={m.id}
+              className={`rounded-lg border border-border bg-card p-3 text-sm ${voided ? "text-muted-foreground" : "text-brand-ink"}`}
+            >
+              <div className={`flex items-center justify-between ${voided ? "line-through" : ""}`}>
+                <span className="font-medium">
+                  {m.type} · {m.quantity}
+                </span>
+                <span className="text-xs">{m.movementDate}</span>
+              </div>
+              {m.note && (
+                <p className={`mt-1 text-xs ${voided ? "line-through" : "text-muted-foreground"}`}>
+                  {m.note}
+                </p>
+              )}
+              <div className="mt-2">
+                {voided ? "Voided" : <VoidControl m={m} />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

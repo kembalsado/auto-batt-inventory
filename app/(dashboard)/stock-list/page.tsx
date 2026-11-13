@@ -57,9 +57,9 @@ export default async function StockListPage() {
         <span className="text-sm text-muted-foreground">Stock List</span>
       </div>
 
-      <div className="flex items-center justify-between print:hidden">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <h1 className="text-2xl font-semibold text-brand-ink">Stock List</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <PrintButton />
           <a
             href="/api/stock-list/pdf"
@@ -76,7 +76,13 @@ export default async function StockListPage() {
         </div>
       </div>
 
-      <table className="mt-6 w-full text-left text-sm">
+      {/* Table at md and up; a card list below that for phone width —
+          same split as the Items list, same reason (a 7-column table
+          doesn't fit a phone). Print output always uses the table (the
+          print stylesheet only hides the sidebar/action bar, not this),
+          since a printed page has the table's full width available
+          regardless of screen size. */}
+      <table className="mt-6 hidden w-full text-left text-sm md:table print:table">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 font-medium">SKU</th>
@@ -126,6 +132,37 @@ export default async function StockListPage() {
           )}
         </tbody>
       </table>
+
+      <div className="mt-4 flex flex-col gap-2 md:hidden print:hidden">
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">No active items.</p>
+        )}
+        {rows.map((row) => (
+          <div key={row.sku} className="rounded-lg border border-border bg-card p-3">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-brand-ink">{row.name}</span>
+              <span className="text-xs text-muted-foreground">{row.sku}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{row.category}</span>
+              <span className="text-brand-ink">
+                {row.qtyOnHand} {row.unit}
+              </span>
+            </div>
+            {showCost && row.unitCost !== undefined && (
+              <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
+                <span>Unit cost: {formatCurrency(row.unitCost)}</span>
+                <span>
+                  Value:{" "}
+                  {row.inventoryValue !== undefined
+                    ? formatCurrency(row.inventoryValue)
+                    : ""}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

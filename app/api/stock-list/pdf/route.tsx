@@ -29,12 +29,12 @@ import {
 
 const styles = StyleSheet.create({
   page: { padding: 32, fontSize: 9, fontFamily: "Helvetica" },
-  brand: { fontSize: 10, marginBottom: 2, color: "#019342" },
-  title: { fontSize: 16, marginBottom: 16, color: "#201a1a" },
+  brand: { fontSize: 10, marginBottom: 2, color: "#15502f" },
+  title: { fontSize: 16, marginBottom: 16, color: "#1a1a1a" },
   headerRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#201a1a",
+    borderBottomColor: "#1a1a1a",
     paddingBottom: 4,
   },
   row: {

@@ -130,34 +130,62 @@ export default async function ItemDetailPage({
         {summary.batches.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No batches yet.</p>
         ) : (
-          <table className="mt-2 w-full max-w-2xl text-sm">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="py-1 pr-3">Date</th>
-                <th className="py-1 pr-3">Received</th>
-                <th className="py-1 pr-3">Remaining</th>
-                {summary.batches.some((b) => b.unit_cost !== undefined) && (
-                  <th className="py-1 pr-3">Unit cost</th>
-                )}
-                <th className="py-1 pr-3">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.batches.map((batch) => (
-                <tr key={batch.id} className="text-brand-ink">
-                  <td className="py-1 pr-3">{batch.batch_date}</td>
-                  <td className="py-1 pr-3">{batch.qty_received}</td>
-                  <td className="py-1 pr-3">{batch.qty_remaining}</td>
+          <>
+            <table className="mt-2 hidden w-full max-w-2xl text-sm md:table">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-1 pr-3">Date</th>
+                  <th className="py-1 pr-3">Received</th>
+                  <th className="py-1 pr-3">Remaining</th>
                   {summary.batches.some((b) => b.unit_cost !== undefined) && (
-                    <td className="py-1 pr-3">
-                      {batch.unit_cost !== undefined ? batch.unit_cost : ""}
-                    </td>
+                    <th className="py-1 pr-3">Unit cost</th>
                   )}
-                  <td className="py-1 pr-3">{batch.source}</td>
+                  <th className="py-1 pr-3">Source</th>
                 </tr>
+              </thead>
+              <tbody>
+                {summary.batches.map((batch) => (
+                  <tr key={batch.id} className="text-brand-ink">
+                    <td className="py-1 pr-3">{batch.batch_date}</td>
+                    <td className="py-1 pr-3">{batch.qty_received}</td>
+                    <td className="py-1 pr-3">{batch.qty_remaining}</td>
+                    {summary.batches.some((b) => b.unit_cost !== undefined) && (
+                      <td className="py-1 pr-3">
+                        {batch.unit_cost !== undefined ? batch.unit_cost : ""}
+                      </td>
+                    )}
+                    <td className="py-1 pr-3">{batch.source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="mt-2 flex flex-col gap-2 md:hidden">
+              {summary.batches.map((batch) => (
+                <div
+                  key={batch.id}
+                  className="rounded-lg border border-border bg-card p-3 text-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-brand-ink">
+                      {batch.batch_date}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {batch.source}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-muted-foreground">
+                    <span>
+                      {batch.qty_remaining} / {batch.qty_received} remaining
+                    </span>
+                    {batch.unit_cost !== undefined && (
+                      <span>{batch.unit_cost}/unit</span>
+                    )}
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
 

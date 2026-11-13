@@ -63,13 +63,13 @@ export default async function CategoriesPage({
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Categories</h1>
 
-      <form action={addCategory} className="mt-6 flex gap-2">
+      <form action={addCategory} className="mt-6 flex flex-col gap-2 sm:flex-row">
         <input
           name="name"
           required
           defaultValue={name ?? ""}
           placeholder="Category name"
-          className="w-64 rounded-md border border-border px-3 py-2 text-sm"
+          className="w-full rounded-md border border-border px-3 py-2 text-sm sm:w-64"
         />
         <button
           type="submit"

@@ -47,9 +47,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-1">
-      <Sidebar role={role} />
-      <main className="flex-1 overflow-y-auto p-8">{children}</main>
+    <div className="flex flex-1 flex-col md:flex-row">
+      <Sidebar role={role} pathname={pathname} />
+      <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
     </div>
   );
 }

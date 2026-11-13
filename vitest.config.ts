@@ -9,6 +9,19 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    // Vitest's own default excludes (node_modules, dist, etc.) don't cover
+    // .worktrees/ — a nested checkout with its own tests/ and node_modules.
+    // Without this, running `npm test` from the main checkout also picks
+    // up the worktree's stale copy of every test file and a second,
+    // conflicting React install (surfaces as "Cannot read properties of
+    // null (reading 'useContext')" from next/link).
+    exclude: [
+      "**/node_modules/**",
+      "**/.worktrees/**",
+      "**/.superpowers/**",
+      "**/dist/**",
+      "**/.{idea,git,cache,output,temp}/**",
+    ],
     // Load .env.local (and friends) into process.env so server-only code
     // under test (e.g. the Supabase admin client) can read them, matching
     // how Next.js loads them for the app itself.

@@ -130,7 +130,7 @@ export function StockInForm({
 
       <button
         type="submit"
-        className="mt-2 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
+        className="mt-2 w-full rounded-md bg-brand-green px-4 py-3 text-sm font-medium text-white"
       >
         Record stock IN
       </button>

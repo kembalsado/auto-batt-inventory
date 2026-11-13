@@ -1,14 +1,83 @@
-// Dashboard home. Summary cards (total items, low-stock count, today's
-// IN/OUT) depend on data that doesn't exist until later tasks (7-9, 12,
-// 16) — this is just a placeholder so `/` has a real route inside the
-// dashboard shell built in Task 4, rather than colliding with it.
-export default function DashboardHomePage() {
+import Link from "next/link";
+import { createServerClient } from "@/lib/supabase/server";
+import { getDashboardSummary } from "@/lib/dashboard";
+
+/**
+ * Dashboard home: four stat tiles (total active items, items currently
+ * low on stock, and today's IN/OUT shown separately rather than combined
+ * — a quick glance should answer "how much came in" and "how much went
+ * out" as two different numbers, not one net figure) plus the same
+ * low-stock list the daily email sends. Built on `getDashboardSummary`
+ * (lib/dashboard.ts), which itself reuses the daily email's own
+ * `buildDailySummary` rather than re-deriving "today" or "low stock" a
+ * third time in this project.
+ *
+ * Two-column tile grid on a phone, four across from `sm` up — this page
+ * was named as one of the two or three screens most likely to get a
+ * quick phone check, alongside the Stock List and an item's own page.
+ */
+export default async function DashboardHomePage() {
+  const supabase = await createServerClient();
+  const summary = await getDashboardSummary(supabase);
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Dashboard</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Welcome to Auto Batt Inventory.
-      </p>
+
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <span className="block text-2xl font-bold text-brand-ink">
+            {summary.totalActiveItems}
+          </span>
+          <span className="text-xs text-muted-foreground">Total Items</span>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <span className="block text-2xl font-bold text-brand-gold-dark">
+            {summary.lowStockCount}
+          </span>
+          <span className="text-xs text-muted-foreground">Low Stock</span>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <span className="block text-2xl font-bold text-brand-green">
+            {summary.qtyInToday}
+          </span>
+          <span className="text-xs text-muted-foreground">IN today</span>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <span className="block text-2xl font-bold text-brand-gold-dark">
+            {summary.qtyOutToday}
+          </span>
+          <span className="text-xs text-muted-foreground">OUT today</span>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold text-brand-ink">Low stock</h2>
+        {summary.lowStockItems.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Nothing is currently low on stock.
+          </p>
+        ) : (
+          <ul className="mt-2 divide-y divide-border">
+            {summary.lowStockItems.map((item) => (
+              <li
+                key={item.itemId}
+                className="flex items-center justify-between py-2 text-sm"
+              >
+                <Link
+                  href={`/items/${item.itemId}`}
+                  className="text-brand-ink hover:underline"
+                >
+                  {item.name}
+                </Link>
+                <span className="rounded-full bg-brand-warn-bg px-2 py-0.5 text-xs font-medium text-brand-gold-dark">
+                  {item.qtyOnHand} {item.unit} left
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

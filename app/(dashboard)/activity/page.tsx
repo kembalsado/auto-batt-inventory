@@ -152,33 +152,40 @@ export default async function ActivityPage({
         )}
       </form>
 
-      <table className="mt-6 w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 font-medium">Date</th>
-            <th className="py-2 font-medium">User</th>
-            <th className="py-2 font-medium">Action</th>
-            <th className="py-2 font-medium">Summary</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {entries.map((entry) => (
-            <tr key={entry.id} className="text-brand-ink">
-              <td className="py-2">{formatDate(entry.createdAt)}</td>
-              <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
-              <td className="py-2">{entry.action}</td>
-              <td className="py-2">{entry.summary}</td>
+      {/* Owner-only and not named as a quick-phone-check page, unlike the
+          Dashboard/Stock List/item detail — so this gets the minimum
+          mobile treatment (a horizontal scroll container) rather than a
+          full card reflow: the table stays intact and usable, it just
+          scrolls instead of overflowing the page itself. */}
+      <div className="mt-6 overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-border text-muted-foreground">
+              <th className="py-2 font-medium">Date</th>
+              <th className="py-2 font-medium">User</th>
+              <th className="py-2 font-medium">Action</th>
+              <th className="py-2 font-medium">Summary</th>
             </tr>
-          ))}
-          {entries.length === 0 && (
-            <tr>
-              <td colSpan={4} className="py-2 text-sm text-muted-foreground">
-                No activity yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {entries.map((entry) => (
+              <tr key={entry.id} className="text-brand-ink">
+                <td className="py-2">{formatDate(entry.createdAt)}</td>
+                <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
+                <td className="py-2">{entry.action}</td>
+                <td className="py-2">{entry.summary}</td>
+              </tr>
+            ))}
+            {entries.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-2 text-sm text-muted-foreground">
+                  No activity yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
