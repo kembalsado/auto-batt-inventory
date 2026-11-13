@@ -6,6 +6,7 @@ import {
   AlreadyVoidedError,
   BatchAlreadySoldError,
 } from "@/lib/movements";
+import { getItemStockSummary } from "@/lib/stock";
 import { StockInForm } from "./stock-in-form";
 import { StockOutForm } from "./stock-out-form";
 import { MovementsList, type VoidActionResult } from "./movements-list";
@@ -45,11 +46,13 @@ async function voidMovementAction(movementId: string): Promise<VoidActionResult>
 }
 
 /**
- * Item detail page: hosts the stock-in/stock-out forms (Tasks 8-9) and a
- * movement history list with a per-row "Void" action (Task 10). The full
- * stock summary — qty on hand, low-stock badge, batch list — is Task 12's
- * job; the movement list here exists only to give Void something to act
- * on, not to anticipate Task 12's richer view.
+ * Item detail page: hosts the stock-in/stock-out forms (Tasks 8-9), the
+ * full stock summary (qty on hand, low-stock badge, batch list) and a
+ * movement history list with a per-row "Void" action (Task 10). The
+ * summary itself — qtyOnHand, isLowStock, batches, movements — is computed
+ * once by `getItemStockSummary` (lib/stock.ts), not re-derived here, so
+ * this page and Task 13's stock list never disagree on what "low stock"
+ * means.
  */
 export default async function ItemDetailPage({
   params,
@@ -72,20 +75,28 @@ export default async function ItemDetailPage({
     notFound();
   }
 
-  const { data: movements } = await supabase
-    .from("stock_movements")
-    .select("id, type, quantity, movement_date, note, voided_at")
-    .eq("item_id", item.id)
-    .order("movement_date", { ascending: false })
-    .order("created_at", { ascending: false });
+  const summary = await getItemStockSummary(supabase, item.id);
 
   const insufficientStockAvailable =
     outError === "insufficient" && available != null ? Number(available) : null;
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-brand-ink">{item.name}</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold text-brand-ink">{item.name}</h1>
+        {summary.isLowStock && (
+          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+            Low stock
+          </span>
+        )}
+      </div>
       <p className="text-sm text-muted-foreground">{item.sku}</p>
+      <p className="mt-2 text-sm text-brand-ink">
+        Qty on hand:{" "}
+        <span className="font-medium">
+          {summary.qtyOnHand} {item.unit}
+        </span>
+      </p>
 
       <StockInForm itemId={item.id} />
       <StockOutForm
@@ -93,14 +104,50 @@ export default async function ItemDetailPage({
         insufficientStockAvailable={insufficientStockAvailable}
       />
 
+      <div className="mt-6">
+        <h2 className="text-lg font-medium text-brand-ink">Batches</h2>
+        {summary.batches.length === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">No batches yet.</p>
+        ) : (
+          <table className="mt-2 w-full max-w-2xl text-sm">
+            <thead>
+              <tr className="text-left text-muted-foreground">
+                <th className="py-1 pr-3">Date</th>
+                <th className="py-1 pr-3">Received</th>
+                <th className="py-1 pr-3">Remaining</th>
+                {summary.batches.some((b) => b.unit_cost !== undefined) && (
+                  <th className="py-1 pr-3">Unit cost</th>
+                )}
+                <th className="py-1 pr-3">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.batches.map((batch) => (
+                <tr key={batch.id} className="text-brand-ink">
+                  <td className="py-1 pr-3">{batch.batch_date}</td>
+                  <td className="py-1 pr-3">{batch.qty_received}</td>
+                  <td className="py-1 pr-3">{batch.qty_remaining}</td>
+                  {summary.batches.some((b) => b.unit_cost !== undefined) && (
+                    <td className="py-1 pr-3">
+                      {batch.unit_cost !== undefined ? batch.unit_cost : ""}
+                    </td>
+                  )}
+                  <td className="py-1 pr-3">{batch.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <MovementsList
-        movements={(movements ?? []).map((m) => ({
+        movements={summary.movements.map((m) => ({
           id: m.id,
-          type: m.type as "IN" | "OUT",
-          quantity: Number(m.quantity),
-          movementDate: m.movement_date,
+          type: m.type,
+          quantity: m.quantity,
+          movementDate: m.movementDate,
           note: m.note,
-          voidedAt: m.voided_at,
+          voidedAt: m.voidedAt,
         }))}
         voidAction={voidMovementAction}
       />

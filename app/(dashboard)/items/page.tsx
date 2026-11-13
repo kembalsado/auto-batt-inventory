@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createServerClient } from "@/lib/supabase/server";
 import { listItems } from "@/lib/items";
 import { listCategories } from "@/lib/categories";
+import { getItemStockSummary } from "@/lib/stock";
 
 export default async function ItemsPage() {
   const supabase = await createServerClient();
@@ -11,6 +12,17 @@ export default async function ItemsPage() {
   ]);
 
   const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
+
+  // Qty on hand / low-stock status per item, via the single shared
+  // getItemStockSummary (lib/stock.ts) — same function the item detail
+  // page and Task 13's stock list use, so this list never disagrees with
+  // either about what "low stock" means.
+  const summaries = await Promise.all(
+    items.map((item) => getItemStockSummary(supabase, item.id))
+  );
+  const summaryByItemId = new Map(
+    items.map((item, index) => [item.id, summaries[index]])
+  );
 
   return (
     <div>
@@ -35,20 +47,35 @@ export default async function ItemsPage() {
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {items.map((item) => (
-            <tr key={item.id} className="text-brand-ink">
-              <td className="py-2">{item.sku}</td>
-              <td className="py-2">{item.name}</td>
-              <td className="py-2">
-                {item.category_id
-                  ? categoryNameById.get(item.category_id) ?? "—"
-                  : "—"}
-              </td>
-              <td className="py-2">{item.unit}</td>
-              {/* Qty on hand is computed from batches/stock_movements in Task 12. */}
-              <td className="py-2 text-muted-foreground">—</td>
-            </tr>
-          ))}
+          {items.map((item) => {
+            const summary = summaryByItemId.get(item.id);
+            return (
+              <tr key={item.id} className="text-brand-ink">
+                <td className="py-2">{item.sku}</td>
+                <td className="py-2">
+                  <Link href={`/items/${item.id}`} className="hover:underline">
+                    {item.name}
+                  </Link>
+                </td>
+                <td className="py-2">
+                  {item.category_id
+                    ? categoryNameById.get(item.category_id) ?? "—"
+                    : "—"}
+                </td>
+                <td className="py-2">{item.unit}</td>
+                <td className="py-2">
+                  <span className="flex items-center gap-2">
+                    {summary?.qtyOnHand ?? "—"}
+                    {summary?.isLowStock && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        Low
+                      </span>
+                    )}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
           {items.length === 0 && (
             <tr>
               <td
