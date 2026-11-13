@@ -5,6 +5,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSettings } from "@/lib/settings";
 import { buildDailySummary } from "@/lib/email/dailySummary";
 import { DailySummaryEmail } from "@/lib/email/DailySummaryEmail";
+// The single shared definition of "today" in Asia/Manila. This route used
+// to compute it inline while the stock forms and the opening-stock import
+// each used UTC — the mismatch that silently hid early-morning entries
+// from this very email. See lib/date.ts.
+import { manilaToday } from "@/lib/date";
 
 // Resend's SDK and @react-email/render both do Node-only work (render
 // shells out to a Node-only HTML/text pipeline), so this route needs the
@@ -13,23 +18,6 @@ import { DailySummaryEmail } from "@/lib/email/DailySummaryEmail";
 // default isn't spelled out via `export const runtime` here:
 // next.config.ts's `cacheComponents: true` rejects that route segment
 // config outright.)
-
-/**
- * Resolves "today" as a Asia/Manila calendar date ("YYYY-MM-DD"), matching
- * `stock_movements.movement_date`'s plain-date (no time zone) column.
- * The design doc fixes Asia/Manila as the reference time zone for "end of
- * day" — a cron firing at, say, 11:55pm UTC is already the next calendar
- * day in Manila (UTC+8), so this can't just use the server's own local
- * date.
- *
- * `Intl.DateTimeFormat`'s `en-CA` locale happens to format dates as
- * `YYYY-MM-DD` natively — a well-known trick that avoids pulling in a
- * date library for what is otherwise a single time-zone-aware format
- * call.
- */
-function manilaDateString(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(date);
-}
 
 /**
  * GET /api/cron/daily-email — triggered once daily by Vercel Cron (see
@@ -70,7 +58,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const today = manilaDateString(new Date());
+  const today = manilaToday();
 
   const [summary, settings] = await Promise.all([
     buildDailySummary(supabase, today),

@@ -19,14 +19,12 @@ import { recordStockIn } from "@/lib/movements";
 import { getSettings, updateSettings, type AppSettings } from "@/lib/settings";
 import { randomUUID } from "node:crypto";
 import { GET } from "@/app/api/cron/daily-email/route";
+import { manilaToday } from "@/lib/date";
 
-// Same Asia/Manila "today" computation the route itself uses — duplicated
-// here (not imported) because the route doesn't export it, and a test
-// needs to create a movement dated "today" for the "has activity" case
-// below.
-function manilaToday(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
-}
+// The exact same "today" the route uses — now genuinely imported from
+// lib/date.ts rather than re-implemented here. It used to be duplicated
+// (the route computed it inline and exported nothing), which is the same
+// duplication that let the stock forms and the import drift to UTC.
 
 function makeRequest(headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/cron/daily-email", { headers });
