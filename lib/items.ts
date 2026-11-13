@@ -1,7 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordAudit } from "@/lib/audit";
-import { getRole, canSeeCost } from "@/lib/permissions";
-import { getSettings } from "@/lib/settings";
 
 /** One `items` row. See supabase/migrations/0001_init.sql. */
 export interface Item {
@@ -98,41 +96,35 @@ export interface ViewerBatch {
 
 /**
  * Fetches `itemId`'s batches (oldest first) for display to whichever
- * caller `supabase`'s session belongs to, stripping `unit_cost` from
- * every row when `canSeeCost` (lib/permissions.ts) says that caller's
- * role shouldn't see cost data (an assistant, unless the owner has set
- * `app_settings.show_cost_to_assistant`).
+ * caller `supabase`'s session belongs to, with `unit_cost` present only
+ * when that caller is permitted to see cost data (an owner always; an
+ * assistant only when `app_settings.show_cost_to_assistant` is true).
  *
- * This is the single shared place batch cost gets hidden server-side —
- * the item detail page, the stock list (Task 13), and any future export
- * all read batches through here instead of each re-deriving the rule
- * themselves, per the plan's "cost must be gated where the data is read,
- * not just hidden in the UI" constraint. There's no computed inventory
- * value (qty * cost) here yet — Task 12 is expected to add one once an
- * item-level stock summary exists, and it must strip the same way.
+ * This reads from `batches_for_viewer` (supabase/migrations/
+ * 0010_batches_cost_column_lockdown.sql), not the raw `batches` table.
+ * That view — not this function — is what actually enforces the rule:
+ * it nulls `unit_cost` out per row via `can_see_cost(auth.uid())`, the
+ * SQL mirror of `canSeeCost` (lib/permissions.ts), and the raw table's
+ * `unit_cost` column has had SELECT revoked from `authenticated`
+ * entirely, so there is no other path — including a direct PostgREST
+ * query bypassing this app — for a caller to read it except through that
+ * view. This function only converts the view's `null` into an absent key
+ * (not just `null`), so a caller here can't mistake "hidden" for "free",
+ * matching `ViewerBatch`'s optional `unit_cost` type.
+ *
+ * This is the single shared place the item detail page, the stock list
+ * (Task 13), and any future export read batches through, so none of them
+ * has to re-derive the cost-visibility rule itself. There's no computed
+ * inventory value (qty * cost) here yet — Task 12 is expected to add one
+ * once an item-level stock summary exists, and it must be gated the same
+ * way (ideally also from the database layer, not application code alone).
  */
 export async function getItemBatchesForViewer(
   supabase: SupabaseClient,
   itemId: string
 ): Promise<ViewerBatch[]> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const profile = user
-    ? (
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single()
-      ).data
-    : null;
-  const role = getRole(profile);
-  const settings = await getSettings(supabase);
-
   const { data, error } = await supabase
-    .from("batches")
+    .from("batches_for_viewer")
     .select("*")
     .eq("item_id", itemId)
     .order("batch_date");
@@ -143,11 +135,10 @@ export async function getItemBatchesForViewer(
 
   const batches = (data ?? []) as ViewerBatch[];
 
-  if (canSeeCost(role, settings)) {
-    return batches;
-  }
-
   return batches.map((batch) => {
+    if (batch.unit_cost !== null) {
+      return batch;
+    }
     const stripped: ViewerBatch = { ...batch };
     delete stripped.unit_cost;
     return stripped;

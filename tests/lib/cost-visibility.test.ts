@@ -203,6 +203,110 @@ test("an owner always receives unit_cost regardless of show_cost_to_assistant", 
   expect(batches.some((b) => b.unit_cost === 999)).toBe(true);
 });
 
+// The following tests prove the column-level lockdown directly — not
+// through getItemBatchesForViewer, but via a raw query against the
+// `batches` table itself, the way an assistant bypassing the app and
+// hitting PostgREST directly would. Before
+// supabase/migrations/0010_batches_cost_column_lockdown.sql, this was
+// exactly the hole code review found: getItemBatchesForViewer stripped
+// unit_cost, but `batches_select_authenticated`'s RLS policy
+// (`using (true)`) said nothing about columns, so a direct
+// `GET /rest/v1/batches?select=*` with a real assistant session still
+// returned the raw cost. These tests query `.from("batches")` directly to
+// prove that path is now closed at the database layer, regardless of
+// show_cost_to_assistant and regardless of role.
+
+test("RLS/columns: an assistant cannot read unit_cost directly from the batches table, even with the setting on", async () => {
+  const admin = createAdminClient();
+  // Deliberately the *opposite* of the usual test setup: prove the column
+  // lockdown holds even when show_cost_to_assistant is true, since it's a
+  // Postgres column grant (role-level), not conditioned on the setting at
+  // all — only `batches_for_viewer` conditions on the setting.
+  await updateSettings(admin, OWNER_ID, { showCostToAssistant: true });
+
+  const assistantClient = createAnonClient();
+  const { error: signInError } = await assistantClient.auth.signInWithPassword({
+    email: ASSISTANT_EMAIL,
+    password: PASSWORD,
+  });
+  expect(signInError).toBeNull();
+
+  const wildcard = await assistantClient
+    .from("batches")
+    .select("*")
+    .eq("id", batchId);
+  // Postgres denies the whole query, not a partial row, because `select
+  // *` references every column (unit_cost included) up front — see
+  // tests/lib/cost-visibility.test.ts's live-verification notes in
+  // task-11-report.md.
+  expect(wildcard.error?.code).toBe("42501");
+  expect(wildcard.data).toBeNull();
+
+  const explicitColumn = await assistantClient
+    .from("batches")
+    .select("unit_cost")
+    .eq("id", batchId);
+  expect(explicitColumn.error?.code).toBe("42501");
+  expect(explicitColumn.data).toBeNull();
+});
+
+test("RLS/columns: an owner cannot read unit_cost directly from the batches table either — it's a role-level grant, not an owner exception", async () => {
+  const ownerClient = createAnonClient();
+  const { error: signInError } = await ownerClient.auth.signInWithPassword({
+    email: OWNER_EMAIL,
+    password: PASSWORD,
+  });
+  expect(signInError).toBeNull();
+
+  const { data, error } = await ownerClient
+    .from("batches")
+    .select("*")
+    .eq("id", batchId);
+
+  expect(error?.code).toBe("42501");
+  expect(data).toBeNull();
+});
+
+test("RLS/columns: non-cost columns (e.g. qty_remaining) remain directly readable on batches — the lockdown is column-specific, not a full table lockout", async () => {
+  const assistantClient = createAnonClient();
+  const { error: signInError } = await assistantClient.auth.signInWithPassword({
+    email: ASSISTANT_EMAIL,
+    password: PASSWORD,
+  });
+  expect(signInError).toBeNull();
+
+  const { data, error } = await assistantClient
+    .from("batches")
+    .select("qty_remaining")
+    .eq("id", batchId)
+    .single();
+
+  expect(error).toBeNull();
+  expect(data?.qty_remaining).toBe(10);
+});
+
+test("batches_for_viewer (not getItemBatchesForViewer) nulls unit_cost for an assistant directly, proving the database view itself enforces this, not just the JS wrapper", async () => {
+  const admin = createAdminClient();
+  await updateSettings(admin, OWNER_ID, { showCostToAssistant: false });
+
+  const assistantClient = createAnonClient();
+  const { error: signInError } = await assistantClient.auth.signInWithPassword({
+    email: ASSISTANT_EMAIL,
+    password: PASSWORD,
+  });
+  expect(signInError).toBeNull();
+
+  const { data, error } = await assistantClient
+    .from("batches_for_viewer")
+    .select("*")
+    .eq("id", batchId)
+    .single();
+
+  expect(error).toBeNull();
+  expect(data?.unit_cost).toBeNull();
+  expect(data?.qty_remaining).toBe(10);
+});
+
 test("RLS: an assistant can read app_settings but cannot update it", async () => {
   const assistantClient = createAnonClient();
   const { error: signInError } = await assistantClient.auth.signInWithPassword({
