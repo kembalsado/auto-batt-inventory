@@ -19,7 +19,7 @@ export function getRole(profile: ProfileLike | null | undefined): Role {
 
 // Route prefixes only the "owner" role may access. Matched against the
 // request pathname, including nested paths (e.g. "/users/42").
-const OWNER_ONLY_PATHS = ["/users", "/activity", "/settings"];
+const OWNER_ONLY_PATHS = ["/users", "/activity", "/settings", "/import"];
 
 /** True when `path` falls under a route only the owner role may access. */
 export function isOwnerOnlyRoute(path: string): boolean {

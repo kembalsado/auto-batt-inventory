@@ -14,6 +14,7 @@ const NAV_LINKS: NavLink[] = [
   { href: "/items", label: "Items" },
   { href: "/categories", label: "Categories" },
   { href: "/stock-list", label: "Stock List" },
+  { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
   { href: "/activity", label: "Activity" },
   { href: "/settings", label: "Settings" },
