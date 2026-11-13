@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canSeeCost, type Role } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
+import { isLowStockQty } from "@/lib/stock";
 
 /**
  * One row of the stock list (Task 13) — the page, the PDF export route,
@@ -16,13 +17,36 @@ import { getSettings } from "@/lib/settings";
  * mentions cost at all.
  */
 export interface StockListRow {
+  /** The item's id — the Items list links each row to /items/<id>. */
+  id: string;
   sku: string;
   name: string;
   category: string;
   qtyOnHand: number;
   unit: string;
+  /**
+   * `isLowStockQty` (lib/stock.ts) applied to this item's own threshold
+   * and the global default — the same single definition of "low" the
+   * item detail page and the daily email use. Computed here from the
+   * bulk query rather than by a per-item call, so a list can render the
+   * low-stock badge without N round trips.
+   */
+  isLowStock: boolean;
+  /** `items.is_active`. Only ever false when `includeInactive` was set. */
+  isActive: boolean;
   unitCost?: number;
   inventoryValue?: number;
+}
+
+/** Options for `buildStockListRows`. */
+export interface BuildStockListOptions {
+  /**
+   * Include items with `is_active = false`. Defaults to false — the
+   * Stock List, the PDF and the Excel export are all "what is on the
+   * shelves right now" views. The Items management list passes true, so
+   * a deactivated item stays visible to whoever manages the catalogue.
+   */
+  includeInactive?: boolean;
 }
 
 /**
@@ -36,6 +60,8 @@ interface ItemWithCategoryRow {
   sku: string;
   name: string;
   unit: string;
+  low_stock_threshold: number | null;
+  is_active: boolean;
   categories: { name: string } | null;
 }
 
@@ -49,10 +75,21 @@ interface ViewerBatchRow {
 }
 
 /**
- * Builds one `StockListRow` per active item: sku, name, category, qty on
- * hand, unit, and — only when `viewerRole` can see cost — the oldest
- * remaining batch's unit cost plus the item's total inventory value
- * (`sum(qty_remaining * unit_cost)` across all its remaining batches).
+ * Builds one `StockListRow` per item: id, sku, name, category, qty on
+ * hand, unit, low-stock status, active flag, and — only when
+ * `viewerRole` can see cost — the oldest remaining batch's unit cost
+ * plus the item's total inventory value (`sum(qty_remaining *
+ * unit_cost)` across all its remaining batches).
+ *
+ * Active items only by default; pass `{ includeInactive: true }` for the
+ * Items management list, which must still show a deactivated item.
+ *
+ * Four consumers share this one builder: the Stock List page, the PDF
+ * export, the Excel export, and the Items list. The Items list used to
+ * call `getItemStockSummary` once per item instead — 3 queries each,
+ * including the item's ENTIRE movement history, just to print a
+ * qty-on-hand number — which is the N+1 pattern Tasks 12 and 13 already
+ * fixed elsewhere. It predated those fixes and was never revisited.
  *
  * Performance: this is a small, fixed number of bulk queries, not one
  * query per item — the exact N+1 pattern Task 12's review flagged for a
@@ -78,14 +115,22 @@ interface ViewerBatchRow {
  */
 export async function buildStockListRows(
   supabase: SupabaseClient,
-  viewerRole: Role
+  viewerRole: Role,
+  options: BuildStockListOptions = {}
 ): Promise<StockListRow[]> {
+  let itemsQuery = supabase
+    .from("items")
+    .select(
+      "id, sku, name, unit, low_stock_threshold, is_active, categories(name)"
+    )
+    .order("name");
+
+  if (!options.includeInactive) {
+    itemsQuery = itemsQuery.eq("is_active", true);
+  }
+
   const [itemsResult, settings] = await Promise.all([
-    supabase
-      .from("items")
-      .select("id, sku, name, unit, categories(name)")
-      .eq("is_active", true)
-      .order("name"),
+    itemsQuery,
     getSettings(supabase),
   ]);
 
@@ -126,11 +171,20 @@ export async function buildStockListRows(
     );
 
     const base = {
+      id: item.id,
       sku: item.sku,
       name: item.name,
       category: item.categories?.name ?? "Uncategorized",
       qtyOnHand,
       unit: item.unit,
+      isLowStock: isLowStockQty(
+        qtyOnHand,
+        item.low_stock_threshold != null
+          ? Number(item.low_stock_threshold)
+          : null,
+        settings.defaultLowStockThreshold
+      ),
+      isActive: item.is_active,
     };
 
     if (!showCost) {

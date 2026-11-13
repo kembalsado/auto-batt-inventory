@@ -238,6 +238,66 @@ test("an inactive item is excluded from the stock list", async () => {
   expect(row).toBeUndefined();
 });
 
+// The Items list (app/(dashboard)/items/page.tsx) renders from these same
+// rows instead of calling getItemStockSummary once per item (3 queries
+// each, including the item's full movement history). That needs the id to
+// link with, the low-stock flag to badge with, and inactive items
+// included — all computed from the same bulk queries, no extra round
+// trips.
+test("rows carry the item's id, so a list can link to /items/<id> without a second query", async () => {
+  const ownerClient = await signIn(OWNER_EMAIL);
+  const rows = await buildStockListRows(ownerClient, "owner");
+  const row = rows.find((r) => r.sku === `${skuPrefix}-001`);
+
+  expect(row?.id).toBe(itemWithStockId);
+});
+
+test("isLowStock uses the shared isLowStockQty rule against the global default threshold", async () => {
+  const ownerClient = await signIn(OWNER_EMAIL);
+  const rows = await buildStockListRows(ownerClient, "owner");
+
+  // 15 on hand, default threshold 5 -> not low.
+  expect(rows.find((r) => r.sku === `${skuPrefix}-001`)?.isLowStock).toBe(false);
+  // 0 on hand -> at or below the threshold -> low.
+  expect(rows.find((r) => r.sku === `${skuPrefix}-002`)?.isLowStock).toBe(true);
+});
+
+test("isLowStock honours an item's own threshold over the global default", async () => {
+  const admin = createAdminClient();
+  // 15 on hand with a per-item threshold of 20 is low, even though the
+  // global default (5) would say otherwise.
+  await admin
+    .from("items")
+    .update({ low_stock_threshold: 20 })
+    .eq("id", itemWithStockId);
+
+  const ownerClient = await signIn(OWNER_EMAIL);
+  const rows = await buildStockListRows(ownerClient, "owner");
+  expect(rows.find((r) => r.sku === `${skuPrefix}-001`)?.isLowStock).toBe(true);
+
+  await admin
+    .from("items")
+    .update({ low_stock_threshold: null })
+    .eq("id", itemWithStockId);
+});
+
+test("includeInactive brings deactivated items back, marked as inactive", async () => {
+  const ownerClient = await signIn(OWNER_EMAIL);
+
+  const defaultRows = await buildStockListRows(ownerClient, "owner");
+  expect(defaultRows.find((r) => r.sku === `${skuPrefix}-003`)).toBeUndefined();
+  expect(defaultRows.every((r) => r.isActive)).toBe(true);
+
+  const allRows = await buildStockListRows(ownerClient, "owner", {
+    includeInactive: true,
+  });
+  const inactive = allRows.find((r) => r.sku === `${skuPrefix}-003`);
+  expect(inactive).toBeDefined();
+  expect(inactive?.isActive).toBe(false);
+  // The active ones still come through, still flagged active.
+  expect(allRows.find((r) => r.sku === `${skuPrefix}-001`)?.isActive).toBe(true);
+});
+
 test("rows carry the item's category name and unit", async () => {
   const ownerClient = await signIn(OWNER_EMAIL);
   const rows = await buildStockListRows(ownerClient, "owner");

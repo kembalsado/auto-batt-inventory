@@ -1,32 +1,46 @@
 import Link from "next/link";
 import { createServerClient } from "@/lib/supabase/server";
-import { listItems } from "@/lib/items";
-import { listCategories } from "@/lib/categories";
-import { getItemStockSummary } from "@/lib/stock";
-import { getSettings } from "@/lib/settings";
+import { getRole } from "@/lib/permissions";
+import { buildStockListRows } from "@/lib/stock-list";
 
+/**
+ * Items list: one row per item (SKU, name, category, unit, qty on hand,
+ * low-stock badge).
+ *
+ * Built by the shared `buildStockListRows` (lib/stock-list.ts) — a fixed
+ * three bulk queries for the whole page, no matter how many items exist.
+ * This page previously called `getItemStockSummary` once per item, which
+ * is 3 queries per item and pulls each item's complete movement history
+ * just to display a single quantity — the N+1 pattern Tasks 12 and 13
+ * already removed from the item detail page and the Stock List. This
+ * page predated both fixes.
+ *
+ * `includeInactive: true`, unlike the Stock List: this is the catalogue
+ * management view, so an item that has been deactivated must still be
+ * visible here (it's marked as such) rather than silently vanishing.
+ *
+ * No cost is shown on this screen, but the viewer's role is still
+ * resolved and passed through, so `buildStockListRows` applies the same
+ * `canSeeCost` gating here as everywhere else — an assistant's rows
+ * never carry cost fields at all, rather than relying on this template
+ * not to render them.
+ */
 export default async function ItemsPage() {
   const supabase = await createServerClient();
-  const [items, categories, settings] = await Promise.all([
-    listItems(supabase),
-    listCategories(supabase),
-    getSettings(supabase),
-  ]);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
+  const profile = user
+    ? (
+        await supabase.from("profiles").select("role").eq("id", user.id).single()
+      ).data
+    : null;
+  const role = getRole(profile);
 
-  // Qty on hand / low-stock status per item, via the single shared
-  // getItemStockSummary (lib/stock.ts) — same function the item detail
-  // page and Task 13's stock list use, so this list never disagrees with
-  // either about what "low stock" means. `settings` is fetched once above
-  // and passed into every call so this loop doesn't re-fetch the single
-  // global app_settings row once per item.
-  const summaries = await Promise.all(
-    items.map((item) => getItemStockSummary(supabase, item.id, settings))
-  );
-  const summaryByItemId = new Map(
-    items.map((item, index) => [item.id, summaries[index]])
-  );
+  const rows = await buildStockListRows(supabase, role, {
+    includeInactive: true,
+  });
 
   return (
     <div>
@@ -51,41 +65,36 @@ export default async function ItemsPage() {
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {items.map((item) => {
-            const summary = summaryByItemId.get(item.id);
-            return (
-              <tr key={item.id} className="text-brand-ink">
-                <td className="py-2">{item.sku}</td>
-                <td className="py-2">
-                  <Link href={`/items/${item.id}`} className="hover:underline">
-                    {item.name}
-                  </Link>
-                </td>
-                <td className="py-2">
-                  {item.category_id
-                    ? categoryNameById.get(item.category_id) ?? "—"
-                    : "—"}
-                </td>
-                <td className="py-2">{item.unit}</td>
-                <td className="py-2">
-                  <span className="flex items-center gap-2">
-                    {summary?.qtyOnHand ?? "—"}
-                    {summary?.isLowStock && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        Low
-                      </span>
-                    )}
+          {rows.map((row) => (
+            <tr key={row.id} className="text-brand-ink">
+              <td className="py-2">{row.sku}</td>
+              <td className="py-2">
+                <Link href={`/items/${row.id}`} className="hover:underline">
+                  {row.name}
+                </Link>
+                {!row.isActive && (
+                  <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                    Inactive
                   </span>
-                </td>
-              </tr>
-            );
-          })}
-          {items.length === 0 && (
+                )}
+              </td>
+              <td className="py-2">{row.category}</td>
+              <td className="py-2">{row.unit}</td>
+              <td className="py-2">
+                <span className="flex items-center gap-2">
+                  {row.qtyOnHand}
+                  {row.isLowStock && (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      Low
+                    </span>
+                  )}
+                </span>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
             <tr>
-              <td
-                colSpan={5}
-                className="py-2 text-sm text-muted-foreground"
-              >
+              <td colSpan={5} className="py-2 text-sm text-muted-foreground">
                 No items yet.
               </td>
             </tr>
