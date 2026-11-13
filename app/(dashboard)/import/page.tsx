@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import { submitOpeningStockImport } from "./actions";
 import type { OpeningStockRow } from "@/lib/import";
 
@@ -53,7 +53,8 @@ export default function ImportPage() {
     setRows((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setSubmitting(true);
     setSucceeded(null);
     setErrors([]);
@@ -89,124 +90,133 @@ export default function ImportPage() {
         an opening-stock batch for the quantity on hand today.
       </p>
 
-      <div className="mt-6 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border text-muted-foreground">
-              <th className="py-2 pr-2 font-medium">SKU</th>
-              <th className="py-2 pr-2 font-medium">Name</th>
-              <th className="py-2 pr-2 font-medium">Category</th>
-              <th className="py-2 pr-2 font-medium">Qty</th>
-              <th className="py-2 pr-2 font-medium">Last known unit cost</th>
-              <th className="py-2 pr-2 font-medium">Low stock threshold</th>
-              <th className="py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <Fragment key={index}>
-                <tr className="border-b border-border">
-                  <td className="py-2 pr-2">
-                    <input
-                      required
-                      value={row.sku}
-                      onChange={(e) => updateRow(index, "sku", e.target.value)}
-                      className="w-28 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input
-                      required
-                      value={row.name}
-                      onChange={(e) => updateRow(index, "name", e.target.value)}
-                      className="w-40 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input
-                      required
-                      value={row.category}
-                      onChange={(e) => updateRow(index, "category", e.target.value)}
-                      className="w-32 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input
-                      required
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={row.qty}
-                      onChange={(e) => updateRow(index, "qty", e.target.value)}
-                      className="w-20 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input
-                      required
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={row.lastKnownUnitCost}
-                      onChange={(e) =>
-                        updateRow(index, "lastKnownUnitCost", e.target.value)
-                      }
-                      className="w-28 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={row.lowStockThreshold}
-                      onChange={(e) =>
-                        updateRow(index, "lowStockThreshold", e.target.value)
-                      }
-                      className="w-24 rounded-md border border-border px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(index)}
-                      disabled={rows.length === 1}
-                      className="text-sm text-red-600 disabled:opacity-40"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-                {errorsByRow.has(index) && (
-                  <tr>
-                    <td colSpan={7} className="pb-2 text-sm text-red-600" role="alert">
-                      Row {index + 1}: {errorsByRow.get(index)}
+      {/*
+        Everything below is inside one <form>, including the "Add row" /
+        "Remove" buttons (both type="button" so they don't submit it) —
+        without a <form> wrapper, the inputs' `required`/`min` attributes
+        never get checked by the browser, since there's no submit event
+        for it to validate against. The "Import" button is the form's
+        only type="submit".
+      */}
+      <form onSubmit={handleSubmit}>
+        <div className="mt-6 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-2 pr-2 font-medium">SKU</th>
+                <th className="py-2 pr-2 font-medium">Name</th>
+                <th className="py-2 pr-2 font-medium">Category</th>
+                <th className="py-2 pr-2 font-medium">Qty</th>
+                <th className="py-2 pr-2 font-medium">Last known unit cost</th>
+                <th className="py-2 pr-2 font-medium">Low stock threshold</th>
+                <th className="py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <Fragment key={index}>
+                  <tr className="border-b border-border">
+                    <td className="py-2 pr-2">
+                      <input
+                        required
+                        value={row.sku}
+                        onChange={(e) => updateRow(index, "sku", e.target.value)}
+                        className="w-28 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        required
+                        value={row.name}
+                        onChange={(e) => updateRow(index, "name", e.target.value)}
+                        className="w-40 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        required
+                        value={row.category}
+                        onChange={(e) => updateRow(index, "category", e.target.value)}
+                        className="w-32 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        required
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        value={row.qty}
+                        onChange={(e) => updateRow(index, "qty", e.target.value)}
+                        className="w-20 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        required
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={row.lastKnownUnitCost}
+                        onChange={(e) =>
+                          updateRow(index, "lastKnownUnitCost", e.target.value)
+                        }
+                        className="w-28 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={row.lowStockThreshold}
+                        onChange={(e) =>
+                          updateRow(index, "lowStockThreshold", e.target.value)
+                        }
+                        className="w-24 rounded-md border border-border px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        onClick={() => removeRow(index)}
+                        disabled={rows.length === 1}
+                        className="text-sm text-red-600 disabled:opacity-40"
+                      >
+                        Remove
+                      </button>
                     </td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  {errorsByRow.has(index) && (
+                    <tr>
+                      <td colSpan={7} className="pb-2 text-sm text-red-600" role="alert">
+                        Row {index + 1}: {errorsByRow.get(index)}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <div className="mt-4 flex gap-3">
-        <button
-          type="button"
-          onClick={addRow}
-          className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
-        >
-          Add row
-        </button>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-        >
-          {submitting ? "Importing…" : "Import"}
-        </button>
-      </div>
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            onClick={addRow}
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
+          >
+            Add row
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {submitting ? "Importing…" : "Import"}
+          </button>
+        </div>
+      </form>
 
       {succeeded !== null && (
         <p className="mt-4 text-sm text-brand-ink">
