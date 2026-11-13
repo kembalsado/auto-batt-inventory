@@ -3,8 +3,47 @@ import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
 import { recordStockIn, recordStockOut, voidMovement } from "@/lib/movements";
 import { getSettings, updateSettings, type AppSettings } from "@/lib/settings";
-import { getItemStockSummary } from "@/lib/stock";
+import { getItemStockSummary, isLowStockQty } from "@/lib/stock";
 import { randomUUID } from "node:crypto";
+
+// isLowStockQty is a pure function (no DB access) — unit-tested directly
+// with plain values, independent of the DB-backed tests below. This is
+// the single implementation getItemStockSummary itself calls internally,
+// and the primitive Task 13 (stock list) / Task 16 (daily email) are
+// expected to call directly against bulk-fetched values rather than
+// going through getItemStockSummary once per item.
+describe("isLowStockQty", () => {
+  test("is true when qtyOnHand is below the item's own threshold", () => {
+    expect(isLowStockQty(2, 5, 3)).toBe(true);
+  });
+
+  test("is true when qtyOnHand is exactly at the item's own threshold (at-or-below, not strictly below)", () => {
+    expect(isLowStockQty(5, 5, 3)).toBe(true);
+  });
+
+  test("is false when qtyOnHand is above the item's own threshold", () => {
+    expect(isLowStockQty(6, 5, 3)).toBe(false);
+  });
+
+  test("falls back to defaultThreshold when itemThreshold is null", () => {
+    expect(isLowStockQty(3, null, 3)).toBe(true);
+    expect(isLowStockQty(4, null, 3)).toBe(false);
+  });
+
+  test("uses the item's own threshold instead of the default even when that makes it low despite being above the default", () => {
+    // qtyOnHand 4 is above the default (3) but at-or-below the item's own
+    // threshold (5) -> low, because the item's own threshold always wins
+    // over the default when set.
+    expect(isLowStockQty(4, 5, 3)).toBe(true);
+  });
+
+  test("an item threshold of 0 is respected, not treated as unset", () => {
+    // itemThreshold is 0, a legitimate (if unusual) value, not null/undefined
+    // -> must NOT fall back to defaultThreshold.
+    expect(isLowStockQty(0, 0, 3)).toBe(true);
+    expect(isLowStockQty(1, 0, 3)).toBe(false);
+  });
+});
 
 // A real profile row is required: audit_log.actor_id has a FK to
 // profiles(id) (createItem/recordStockIn/recordStockOut/voidMovement all

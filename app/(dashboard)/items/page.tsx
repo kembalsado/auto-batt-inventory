@@ -3,12 +3,14 @@ import { createServerClient } from "@/lib/supabase/server";
 import { listItems } from "@/lib/items";
 import { listCategories } from "@/lib/categories";
 import { getItemStockSummary } from "@/lib/stock";
+import { getSettings } from "@/lib/settings";
 
 export default async function ItemsPage() {
   const supabase = await createServerClient();
-  const [items, categories] = await Promise.all([
+  const [items, categories, settings] = await Promise.all([
     listItems(supabase),
     listCategories(supabase),
+    getSettings(supabase),
   ]);
 
   const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
@@ -16,9 +18,11 @@ export default async function ItemsPage() {
   // Qty on hand / low-stock status per item, via the single shared
   // getItemStockSummary (lib/stock.ts) — same function the item detail
   // page and Task 13's stock list use, so this list never disagrees with
-  // either about what "low stock" means.
+  // either about what "low stock" means. `settings` is fetched once above
+  // and passed into every call so this loop doesn't re-fetch the single
+  // global app_settings row once per item.
   const summaries = await Promise.all(
-    items.map((item) => getItemStockSummary(supabase, item.id))
+    items.map((item) => getItemStockSummary(supabase, item.id, settings))
   );
   const summaryByItemId = new Map(
     items.map((item, index) => [item.id, summaries[index]])

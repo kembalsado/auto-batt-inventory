@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getItemBatchesForViewer, type ViewerBatch } from "@/lib/items";
-import { getSettings } from "@/lib/settings";
+import { getSettings, type AppSettings } from "@/lib/settings";
 
 /**
  * One `stock_movements` row, as shown in an item's movement history (Task
@@ -30,6 +30,32 @@ export interface ItemStockSummary {
 }
 
 /**
+ * The single implementation of "is this item low on stock," per the
+ * project ledger's binding ruling: an item's own `low_stock_threshold`
+ * if set, otherwise `app_settings.default_low_stock_threshold`, and
+ * "low" means at or below that threshold (`<=`), not strictly below —
+ * see the task brief's test ("isLowStock is true when qtyOnHand is at
+ * or below the item's threshold").
+ *
+ * This is a plain function — no DB access, no async — so Task 13's
+ * stock list and Task 16's daily email can call it directly against
+ * values they've already fetched in bulk (e.g. one `items` query plus
+ * one `app_settings` row), instead of going through the full, much
+ * heavier `getItemStockSummary` (which also pulls batches and complete
+ * movement history) once per item just to get this one boolean.
+ * `getItemStockSummary` itself calls this helper internally, so there
+ * remains exactly one place this comparison is written.
+ */
+export function isLowStockQty(
+  qtyOnHand: number,
+  itemThreshold: number | null,
+  defaultThreshold: number
+): boolean {
+  const threshold = itemThreshold ?? defaultThreshold;
+  return qtyOnHand <= threshold;
+}
+
+/**
  * Computes an item's full stock summary: quantity on hand, whether that
  * counts as low stock, its batch list (cost-gated per viewer), and its
  * full movement history (voided entries included, newest first).
@@ -43,17 +69,15 @@ export interface ItemStockSummary {
  * effect is already baked into the batch rows. There is nothing left to
  * subtract.
  *
- * `isLowStock` compares `qtyOnHand` against a threshold using this
- * ruling (binding for every other "is this item low on stock" check in
- * the app — Task 13's stock list and Task 16's daily email reuse this
- * function rather than re-deriving the rule themselves):
+ * `isLowStock` is `isLowStockQty` (above) applied to this item's own
+ * threshold and the given/fetched settings — not re-derived here.
  *
- *   item.low_stock_threshold if set, otherwise
- *   app_settings.default_low_stock_threshold
- *
- * "Low stock" means at or below the threshold (<=), not strictly below —
- * see the task brief's test ("isLowStock is true when qtyOnHand is at or
- * below the item's threshold").
+ * `settings` is optional and defaults to fetching the single
+ * `app_settings` row via `getSettings` when omitted (the item detail
+ * page's usage). A caller that already has the settings row in hand —
+ * e.g. the items list page, computing a summary per item in a loop —
+ * should pass it explicitly so this function doesn't re-fetch the same
+ * global row once per item.
  *
  * Batches come from `getItemBatchesForViewer` (lib/items.ts), so
  * `unit_cost` is present or absent per-row exactly as that function's
@@ -62,16 +86,17 @@ export interface ItemStockSummary {
  */
 export async function getItemStockSummary(
   supabase: SupabaseClient,
-  itemId: string
+  itemId: string,
+  settings?: AppSettings
 ): Promise<ItemStockSummary> {
-  const [itemResult, batches, settings, movementsResult] = await Promise.all([
+  const [itemResult, batches, resolvedSettings, movementsResult] = await Promise.all([
     supabase
       .from("items")
       .select("low_stock_threshold")
       .eq("id", itemId)
       .single(),
     getItemBatchesForViewer(supabase, itemId),
-    getSettings(supabase),
+    settings ? Promise.resolve(settings) : getSettings(supabase),
     supabase
       .from("stock_movements")
       .select("*")
@@ -92,9 +117,15 @@ export async function getItemStockSummary(
     0
   );
 
-  const threshold =
-    itemResult.data?.low_stock_threshold ?? settings.defaultLowStockThreshold;
-  const isLowStock = qtyOnHand <= Number(threshold);
+  const itemThreshold =
+    itemResult.data?.low_stock_threshold != null
+      ? Number(itemResult.data.low_stock_threshold)
+      : null;
+  const isLowStock = isLowStockQty(
+    qtyOnHand,
+    itemThreshold,
+    resolvedSettings.defaultLowStockThreshold
+  );
 
   const movements: StockMovement[] = (movementsResult.data ?? []).map((m) => ({
     id: m.id,
