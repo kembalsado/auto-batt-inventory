@@ -45,6 +45,16 @@ async function voidMovementAction(movementId: string): Promise<VoidActionResult>
   }
 }
 
+// Messages for the `inError`/`outError` query params the two stock forms'
+// Server Actions redirect back with when input is rejected before it
+// reaches the database. Before these existed, an invalid entry (a
+// quantity of zero, say) made the action `return` silently — the user
+// pressed the button and nothing happened at all.
+const STOCK_ERROR_MESSAGES: Record<string, string> = {
+  "invalid-qty": "Enter a quantity greater than zero, and a valid date.",
+  "invalid-cost": "Enter a unit cost of zero or more.",
+};
+
 /**
  * Item detail page: hosts the stock-in/stock-out forms (Tasks 8-9), the
  * full stock summary (qty on hand, low-stock badge, batch list) and a
@@ -53,16 +63,24 @@ async function voidMovementAction(movementId: string): Promise<VoidActionResult>
  * once by `getItemStockSummary` (lib/stock.ts), not re-derived here, so
  * this page and Task 13's stock list never disagree on what "low stock"
  * means.
+ *
+ * Rejections from the two stock forms come back as `inError`/`outError`
+ * query params and are turned into the messages below — see
+ * STOCK_ERROR_MESSAGES.
  */
 export default async function ItemDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ outError?: string; available?: string }>;
+  searchParams: Promise<{
+    inError?: string;
+    outError?: string;
+    available?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { outError, available } = await searchParams;
+  const { inError, outError, available } = await searchParams;
   const supabase = await createServerClient();
 
   const { data: item } = await supabase
@@ -79,6 +97,8 @@ export default async function ItemDetailPage({
 
   const insufficientStockAvailable =
     outError === "insufficient" && available != null ? Number(available) : null;
+  const stockInError = inError ? STOCK_ERROR_MESSAGES[inError] : undefined;
+  const stockOutError = outError ? STOCK_ERROR_MESSAGES[outError] : undefined;
 
   return (
     <div>
@@ -98,10 +118,11 @@ export default async function ItemDetailPage({
         </span>
       </p>
 
-      <StockInForm itemId={item.id} />
+      <StockInForm itemId={item.id} errorMessage={stockInError} />
       <StockOutForm
         itemId={item.id}
         insufficientStockAvailable={insufficientStockAvailable}
+        errorMessage={stockOutError}
       />
 
       <div className="mt-6">
