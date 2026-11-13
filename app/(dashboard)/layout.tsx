@@ -5,6 +5,13 @@ import { createServerClient } from "@/lib/supabase/server";
 import { getRole, isOwnerOnlyRoute } from "@/lib/permissions";
 import { Sidebar } from "@/components/sidebar";
 
+// Every dashboard route reads the caller's session (cookies) and renders
+// per-user data, so there is nothing valid to prerender here — force
+// dynamic rendering instead of letting cacheComponents try to statically
+// build these routes (which fails: "uncached or runtime data during
+// prerendering").
+export const instant = false;
+
 /**
  * Shell for every authenticated route: fetches the signed-in user's
  * profile, renders the role-gated sidebar, and redirects an assistant
