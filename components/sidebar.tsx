@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { isOwnerOnlyRoute, type Role } from "@/lib/permissions";
+import { SignOutButton } from "@/components/sign-out-button";
 
 interface NavLink {
   href: string;
@@ -43,6 +44,16 @@ export function Sidebar({ role }: { role: Role }) {
           </Link>
         ))}
       </nav>
+      {/*
+        Sign out lives at the bottom of the sidebar, separated from the
+        nav links, and is shown to BOTH roles — this is a shared shop
+        computer, and the owner needs to hand it back to the assistant
+        without leaving their own session (cost data, Activity, Settings)
+        open.
+      */}
+      <div className="mt-auto flex flex-col">
+        <SignOutButton />
+      </div>
     </aside>
   );
 }
