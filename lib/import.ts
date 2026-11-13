@@ -3,6 +3,11 @@ import { createCategory, listCategories } from "@/lib/categories";
 import { createItem } from "@/lib/items";
 import { recordAudit } from "@/lib/audit";
 import { getRole } from "@/lib/permissions";
+import { manilaToday } from "@/lib/date";
+// `describeError` lives in lib/errors.ts, shared with the Server Actions
+// that need the same "a PostgrestError is not an Error instance"
+// handling — see that module's header.
+import { describeError } from "@/lib/errors";
 
 /** One row of historical opening-stock data accepted by `importOpeningStock`. */
 export interface OpeningStockRow {
@@ -35,6 +40,46 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Deletes one partial row's leftovers from `table`, returning a
+ * human-readable failure description or `null` on success.
+ *
+ * A null `.error` is NOT proof the row went away. Under RLS a DELETE the
+ * caller isn't authorized to perform simply matches no rows: Postgres
+ * applies the policy as a filter, so the statement succeeds having
+ * affected zero rows, and PostgREST reports no error. That is exactly the
+ * situation for a real user session here — `batches`, `items`, and
+ * `stock_movements` have SELECT/INSERT policies (and `items` an UPDATE
+ * one) but no DELETE policy at all (supabase/migrations/0005, 0006), so
+ * every delete below is a guaranteed no-op for anyone but the
+ * service-role client. Checking only `.error` therefore reported a clean
+ * cleanup while leaving the item behind, and the user was then stuck:
+ * retrying the same SKU failed with "already exists" for an item that had
+ * no stock.
+ *
+ * `{ count: "exact" }` makes PostgREST return the affected-row count
+ * (supabase-js v2 surfaces it as `count`), which is what actually
+ * distinguishes "deleted" from "silently matched nothing".
+ */
+async function deletePartialRow(
+  supabase: SupabaseClient,
+  table: "stock_movements" | "batches" | "items",
+  id: string
+): Promise<string | null> {
+  const { error, count } = await supabase
+    .from(table)
+    .delete({ count: "exact" })
+    .eq("id", id);
+
+  if (error) {
+    return `could not remove the ${table} row ${id}: ${error.message}`;
+  }
+  if (!count) {
+    return `the ${table} row ${id} could not be removed (the delete affected no rows — most likely no DELETE permission for this user)`;
+  }
+  return null;
+}
+
+/**
  * Deletes whatever partial rows a failed import row already wrote, in FK
  * order (`stock_movements` -> `batches` -> `items`: `stock_movements.
  * batch_id` is a non-cascading FK to `batches.id`, so the movement must
@@ -46,32 +91,27 @@ export class ForbiddenError extends Error {
  * — a cleanup failure means a fully-formed item/batch/movement with no
  * audit trail may be left behind, which is worth telling the caller about
  * even though the row itself still gets reported as failed.
+ *
+ * Cleanup stops at the first step that fails, by design: the remaining
+ * steps are the *parents* in FK order, so once a child row survives, its
+ * parent's delete would fail anyway (`batches` is still referenced by the
+ * surviving `stock_movements` row).
  */
 async function cleanupPartialRow(
   supabase: SupabaseClient,
   ids: { itemId: string | null; batchId: string | null; movementId: string | null }
 ): Promise<string | null> {
-  if (ids.movementId) {
-    const { error } = await supabase
-      .from("stock_movements")
-      .delete()
-      .eq("id", ids.movementId);
-    if (error) {
-      return `cleanup failed removing stock_movements row ${ids.movementId} (manual cleanup may be required): ${error.message}`;
-    }
-  }
+  const steps: [("stock_movements" | "batches" | "items"), string | null][] = [
+    ["stock_movements", ids.movementId],
+    ["batches", ids.batchId],
+    ["items", ids.itemId],
+  ];
 
-  if (ids.batchId) {
-    const { error } = await supabase.from("batches").delete().eq("id", ids.batchId);
-    if (error) {
-      return `cleanup failed removing batch ${ids.batchId} (manual cleanup may be required): ${error.message}`;
-    }
-  }
-
-  if (ids.itemId) {
-    const { error } = await supabase.from("items").delete().eq("id", ids.itemId);
-    if (error) {
-      return `cleanup failed removing item ${ids.itemId} (manual cleanup may be required): ${error.message}`;
+  for (const [table, id] of steps) {
+    if (!id) continue;
+    const failure = await deletePartialRow(supabase, table, id);
+    if (failure) {
+      return `import failed and cleanup could not fully remove the partial record — manual cleanup may be needed: ${failure}`;
     }
   }
 
@@ -135,7 +175,10 @@ export async function importOpeningStock(
     categoryIdByName.set(category.name, category.id);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Asia/Manila, not UTC — see `manilaToday` (lib/date.ts) for why
+  // `new Date().toISOString().slice(0, 10)` permanently hid early-morning
+  // entries from the daily email.
+  const today = manilaToday();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -193,7 +236,20 @@ export async function importOpeningStock(
           source: "opening_stock",
           created_by: actorId,
         })
-        .select()
+        // `.select("id")`, never a bare `.select()`. A bare one expands
+        // to `select=*`, which names `unit_cost` — a column
+        // 0010_batches_cost_column_lockdown.sql revoked SELECT on for
+        // `authenticated`. Postgres rejects the whole statement when a
+        // RETURNING clause references a column the caller can't read, so
+        // `select=*` made this insert fail with "permission denied for
+        // table batches" for every real user session, even though the
+        // INSERT itself was permitted. (It went unnoticed because
+        // tests/lib/import.test.ts originally used only the service-role
+        // client, which bypasses column grants entirely — see the
+        // real-owner-session test added alongside this fix.) `id` is in
+        // 0010's re-granted column list, so asking for just it works,
+        // and it's the only field this code actually uses.
+        .select("id")
         .single();
 
       if (batchError) {
@@ -211,7 +267,11 @@ export async function importOpeningStock(
           movement_date: today,
           created_by: actorId,
         })
-        .select()
+        // `stock_movements` has no revoked columns today, but the same
+        // "ask for only what you use" rule applies — a bare `.select()`
+        // is what silently broke the `batches` insert above the moment a
+        // column lockdown landed on that table.
+        .select("id")
         .single();
 
       if (movementError) {
@@ -229,7 +289,7 @@ export async function importOpeningStock(
 
       succeeded++;
     } catch (err) {
-      const originalMessage = err instanceof Error ? err.message : String(err);
+      const originalMessage = describeError(err);
       const cleanupError = await cleanupPartialRow(supabase, {
         itemId,
         batchId,

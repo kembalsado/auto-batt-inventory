@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   importOpeningStock,
@@ -21,6 +21,47 @@ const createdCategoryNames = new Set<string>();
 
 // Unique per run so reruns never collide on items.sku/categories.name.
 const runId = randomUUID().slice(0, 8);
+
+const PASSWORD = "test-password-123";
+const OWNER_EMAIL = `test-import-owner-${runId}@example.com`;
+
+/**
+ * A plain anon-key client signed in as a REAL user, the way the import
+ * Server Action's own `createServerClient()` session behaves — subject to
+ * RLS and to column grants.
+ *
+ * Every test in this file originally used `createAdminClient()` (service
+ * role), which bypasses both. That is precisely why C2 went undetected:
+ * `lib/import.ts`'s batches insert did a bare `.select()` (= `select=*`),
+ * which names `unit_cost` — a column
+ * 0010_batches_cost_column_lockdown.sql revoked from `authenticated` — so
+ * the insert failed with "permission denied for table batches" for every
+ * real user while passing for the service role. Same pattern as
+ * tests/lib/cost-visibility.test.ts.
+ */
+function createAnonClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        storageKey: `test-${randomUUID()}`,
+      },
+    }
+  );
+}
+
+async function signedInOwnerClient(): Promise<SupabaseClient> {
+  const client = createAnonClient();
+  const { error } = await client.auth.signInWithPassword({
+    email: OWNER_EMAIL,
+    password: PASSWORD,
+  });
+  if (error) throw error;
+  return client;
+}
 
 async function trackItemBySku(sku: string) {
   const admin = createAdminClient();
@@ -65,8 +106,8 @@ function withFailingAuditInsert(
 beforeAll(async () => {
   const admin = createAdminClient();
   const { data: owner } = await admin.auth.admin.createUser({
-    email: `test-import-owner-${runId}@example.com`,
-    password: "test-password-123",
+    email: OWNER_EMAIL,
+    password: PASSWORD,
     email_confirm: true,
     user_metadata: { role: "owner" },
   });
@@ -347,4 +388,132 @@ test("importOpeningStockAsOwner succeeds for an owner", async () => {
   ]);
   expect(result.succeeded).toBe(1);
   await trackItemBySku(sku);
+});
+
+// ---------------------------------------------------------------------
+// Real-session tests. Everything above runs through createAdminClient()
+// (service role), which bypasses RLS and column grants. The import Server
+// Action does NOT — it runs with the signed-in user's own session. These
+// tests exercise that path, which is the one real users actually hit.
+// ---------------------------------------------------------------------
+
+test("importOpeningStockAsOwner succeeds end-to-end through a REAL authenticated owner session, not just the service-role client", async () => {
+  const admin = createAdminClient();
+  const ownerSession = await signedInOwnerClient();
+  const categoryName = `Batteries-RealSession-${runId}`;
+  createdCategoryNames.add(categoryName);
+  const sku = `AB-${runId}-400`;
+
+  // Before the `.select("id")` fix in lib/import.ts, this came back
+  // { succeeded: 0, errors: [{ message: "permission denied for table
+  // batches" }] } — i.e. the import feature was broken for every real
+  // user while every admin-client test above kept passing.
+  const result = await importOpeningStockAsOwner(ownerSession, OWNER_ID, [
+    {
+      sku,
+      name: "Real Session Battery",
+      category: categoryName,
+      qty: 9,
+      lastKnownUnitCost: 1500,
+      lowStockThreshold: 3,
+    },
+  ]);
+
+  expect(result.errors).toEqual([]);
+  expect(result.succeeded).toBe(1);
+
+  // And the rows are really there, with the right values — verified with
+  // the admin client, since the owner's own session can't read unit_cost
+  // off `batches` directly (that's 0010 working as intended).
+  const { data: item } = await admin
+    .from("items")
+    .select("id, name, low_stock_threshold")
+    .eq("sku", sku)
+    .single();
+  expect(item).not.toBeNull();
+  createdItemIds.push(item!.id);
+  expect(item!.name).toBe("Real Session Battery");
+  expect(item!.low_stock_threshold).toBe(3);
+
+  const { data: batch } = await admin
+    .from("batches")
+    .select("*")
+    .eq("item_id", item!.id)
+    .single();
+  expect(batch?.source).toBe("opening_stock");
+  expect(batch?.qty_received).toBe(9);
+  expect(batch?.qty_remaining).toBe(9);
+  expect(Number(batch?.unit_cost)).toBe(1500);
+
+  const { data: movement } = await admin
+    .from("stock_movements")
+    .select("*")
+    .eq("item_id", item!.id)
+    .single();
+  expect(movement?.type).toBe("IN");
+  expect(movement?.quantity).toBe(9);
+  expect(movement?.batch_id).toBe(batch!.id);
+
+  const { data: log } = await admin
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", movement!.id)
+    .single();
+  expect(log?.action).toBe("movement.created");
+  expect(log?.actor_id).toBe(OWNER_ID);
+});
+
+test("a cleanup that silently deletes nothing is reported as a cleanup failure, not as a plain row error", async () => {
+  const admin = createAdminClient();
+  const ownerSession = await signedInOwnerClient();
+  const categoryName = `Batteries-RealSession-${runId}`;
+  createdCategoryNames.add(categoryName);
+  const sku = `AB-${runId}-401`;
+
+  // Force the audit insert to fail *after* the item/batch/movement have
+  // been written, so cleanup runs — over a real owner session, which (per
+  // supabase/migrations/0005 and 0006) has no DELETE policy on items,
+  // batches, or stock_movements. Under RLS those deletes match zero rows
+  // and return NO error, so the old `.error`-only check reported a clean
+  // cleanup while the item stayed behind — and the user was then stuck,
+  // because retrying that SKU failed with "already exists" for an item
+  // with no stock.
+  const wrapped = withFailingAuditInsert(
+    ownerSession,
+    (payload) => payload.action === "movement.created"
+  );
+
+  const result = await importOpeningStock(wrapped, OWNER_ID, [
+    {
+      sku,
+      name: "Cleanup Cannot Remove",
+      category: categoryName,
+      qty: 4,
+      lastKnownUnitCost: 250,
+    },
+  ]);
+
+  expect(result.succeeded).toBe(0);
+  expect(result.errors).toHaveLength(1);
+  // The original cause is still reported...
+  expect(result.errors[0].message).toMatch(/simulated audit failure/i);
+  // ...and so, distinctly and honestly, is the fact that the partial
+  // record is still there.
+  expect(result.errors[0].message).toMatch(
+    /cleanup could not fully remove the partial record/i
+  );
+  expect(result.errors[0].message).toMatch(/manual cleanup may be needed/i);
+  // A supabase PostgrestError is a plain object, not an Error instance —
+  // the message must never degrade to the literal "[object Object]".
+  expect(result.errors[0].message).not.toContain("[object Object]");
+
+  // The row really did survive — the message is telling the truth, which
+  // is the whole point of the fix.
+  const { data: leftover } = await admin
+    .from("items")
+    .select("id")
+    .eq("sku", sku)
+    .single();
+  expect(leftover).not.toBeNull();
+  createdItemIds.push(leftover!.id);
 });
