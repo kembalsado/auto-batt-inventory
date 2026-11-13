@@ -14,10 +14,34 @@ const ACTIONS = [
   "settings.updated",
   "movement.created",
   "movement.voided",
+  // Written by createUserAsOwner (lib/users.ts) — missing from this list
+  // until the final review, so the Add User screen's activity was
+  // unfilterable even though the rows were being recorded.
+  "user.created",
 ];
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
+}
+
+/**
+ * Display name for an audit row's actor.
+ *
+ * `profiles` holds only `id`, `full_name` and `role` — there is no email
+ * column, and `auth.users` is not readable from a user session, so a
+ * profile with no `full_name` falls back to a short id rather than an
+ * email address. Showing something is the point: the audit log exists to
+ * answer "who changed what", and this screen rendered only Date / Action
+ * / Summary, so the "who" half was never on screen at all.
+ */
+function actorLabel(
+  actorId: string | null,
+  namesById: Map<string, string | null>
+): string {
+  if (!actorId) return "System";
+  const name = namesById.get(actorId);
+  if (name) return name;
+  return `Unknown (${actorId.slice(0, 8)})`;
 }
 
 /**
@@ -50,6 +74,12 @@ export default async function ActivityPage({
     throw profilesResult.error;
   }
   const profiles = profilesResult.data ?? [];
+
+  // The same profile rows already fetched for the User filter dropdown
+  // double as the actor-name lookup for the table below — no extra query.
+  const actorNamesById = new Map<string, string | null>(
+    profiles.map((profile) => [profile.id, profile.full_name])
+  );
 
   const hasFilters = Boolean(itemId || actorId || action);
 
@@ -126,6 +156,7 @@ export default async function ActivityPage({
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 font-medium">Date</th>
+            <th className="py-2 font-medium">User</th>
             <th className="py-2 font-medium">Action</th>
             <th className="py-2 font-medium">Summary</th>
           </tr>
@@ -134,13 +165,14 @@ export default async function ActivityPage({
           {entries.map((entry) => (
             <tr key={entry.id} className="text-brand-ink">
               <td className="py-2">{formatDate(entry.createdAt)}</td>
+              <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
               <td className="py-2">{entry.action}</td>
               <td className="py-2">{entry.summary}</td>
             </tr>
           ))}
           {entries.length === 0 && (
             <tr>
-              <td colSpan={3} className="py-2 text-sm text-muted-foreground">
+              <td colSpan={4} className="py-2 text-sm text-muted-foreground">
                 No activity yet.
               </td>
             </tr>

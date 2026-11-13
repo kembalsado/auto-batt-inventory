@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
+import { recordStockIn, recordStockOut } from "@/lib/movements";
 import { listAuditLog } from "@/lib/activity";
 import { randomUUID } from "node:crypto";
 
@@ -95,6 +96,19 @@ afterAll(async () => {
   // auth.users.id are both non-cascading FKs, so audit_log rows must go
   // first, then profiles, then the auth users. items must go before
   // categories deletes.
+  // This file now records real stock IN/OUT (for the item-filter test),
+  // so movement_allocations -> stock_movements -> batches must be cleared
+  // before the items they reference, in that FK order.
+  const { data: movements } = await admin
+    .from("stock_movements")
+    .select("id")
+    .in("item_id", createdItemIds);
+  const movementIds = (movements ?? []).map((m) => m.id);
+  if (movementIds.length) {
+    await admin.from("movement_allocations").delete().in("movement_id", movementIds);
+  }
+  await admin.from("stock_movements").delete().in("item_id", createdItemIds);
+  await admin.from("batches").delete().in("item_id", createdItemIds);
   await admin.from("items").delete().in("id", createdItemIds);
   await admin.from("categories").delete().in("id", createdCategoryIds);
   await admin.from("audit_log").delete().in("actor_id", createdUserIds);
@@ -104,10 +118,63 @@ afterAll(async () => {
   );
 });
 
-test("listAuditLog filters by entity_id", async () => {
+test("listAuditLog filtered by item includes that item's own item.created row", async () => {
   const entries = await listAuditLog(ownerClient, { itemId });
   expect(entries.length).toBeGreaterThan(0);
-  expect(entries.every((e) => e.entityId === itemId)).toBe(true);
+  expect(
+    entries.some((e) => e.entityId === itemId && e.action === "item.created")
+  ).toBe(true);
+});
+
+// The bug this covers: record_stock_in/record_stock_out/void_movement all
+// write their audit row with entity_id = the MOVEMENT's id, never the
+// item's. The old `eq("entity_id", itemId)` filter therefore returned the
+// single item.created row and nothing else, so filtering the Activity
+// screen by an item showed an item with no history at all.
+test("listAuditLog filtered by item returns that item's movement audit entries, not just item.created", async () => {
+  const admin = createAdminClient();
+
+  const { movementId } = await recordStockIn(admin, OWNER_ID, {
+    itemId,
+    qty: 12,
+    unitCost: 1000,
+    batchDate: "2026-07-01",
+  });
+  const { movementId: outMovementId } = await recordStockOut(admin, OWNER_ID, {
+    itemId,
+    qty: 5,
+    movementDate: "2026-07-02",
+  });
+
+  const entries = await listAuditLog(ownerClient, { itemId });
+  const entityIds = entries.map((e) => e.entityId);
+
+  expect(entityIds).toContain(movementId);
+  expect(entityIds).toContain(outMovementId);
+  // ...and the item's own row is still there alongside them.
+  expect(entityIds).toContain(itemId);
+
+  const inEntry = entries.find((e) => e.entityId === movementId);
+  expect(inEntry?.action).toBe("movement.created");
+  expect(inEntry?.entityType).toBe("stock_movement");
+  expect(inEntry?.summary).toContain("IN 12x");
+});
+
+test("listAuditLog filtered by a different item does not leak this item's movements", async () => {
+  const admin = createAdminClient();
+  const otherItem = await createItem(admin, OWNER_ID, {
+    sku: `AB-ACT-OTHER-${runId}`,
+    name: "Unrelated Battery",
+    categoryId: createdCategoryIds[0],
+    unit: "pcs",
+  });
+  createdItemIds.push(otherItem.id);
+
+  const entries = await listAuditLog(ownerClient, { itemId: otherItem.id });
+
+  expect(entries.length).toBeGreaterThan(0);
+  expect(entries.every((e) => e.entityId === otherItem.id)).toBe(true);
+  expect(entries.every((e) => e.action === "item.created")).toBe(true);
 });
 
 test("listAuditLog filters by actorId", async () => {
