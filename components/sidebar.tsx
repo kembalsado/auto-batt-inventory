@@ -25,7 +25,7 @@ export function Sidebar({ role }: { role: Role }) {
   );
 
   return (
-    <aside className="flex h-full w-56 flex-col gap-8 border-r border-border bg-sidebar px-4 py-6">
+    <aside className="flex h-full w-56 flex-col gap-8 border-r border-border bg-sidebar px-4 py-6 print:hidden">
       <div className="px-2">
         <span className="text-lg font-bold tracking-tight text-brand-ink">
           Auto<span className="text-brand-green">Batt</span>
