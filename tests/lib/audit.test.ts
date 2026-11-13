@@ -59,10 +59,16 @@ test("recordAudit inserts a row with the given fields", async () => {
     entityId: "00000000-0000-0000-0000-000000000002",
     summary: "Created item AB-001",
   });
+  // Scoped by entity_id too, not just action: createItem (lib/items.ts) is
+  // called by several other test files, each of which also writes an
+  // "item.created" audit_log row. Without this extra scope, .single() can
+  // intermittently match a stray row from another test instead of (or as
+  // well as) this one and fail — see the task-14 report for the repro.
   const { data } = await supabase
     .from("audit_log")
     .select("*")
     .eq("action", "item.created")
+    .eq("entity_id", "00000000-0000-0000-0000-000000000002")
     .single();
   expect(data?.summary).toBe("Created item AB-001");
 });
