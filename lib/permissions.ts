@@ -28,6 +28,40 @@ export function isOwnerOnlyRoute(path: string): boolean {
   );
 }
 
+// Route prefixes reachable WITHOUT a session. Everything else — every
+// (dashboard) route and every other API route — is redirected to /login
+// by middleware.ts.
+//
+// `/api/cron` is here because Vercel Cron calls /api/cron/daily-email
+// with no session cookie at all, and middleware's matcher covers /api/*.
+// Without this entry that request was answered with a 307 to /login and
+// the route handler never ran, so the daily email never sent in
+// production. Being public in middleware does NOT make the route
+// unauthenticated: app/api/cron/daily-email/route.ts performs its own
+// `Authorization: Bearer ${CRON_SECRET}` check (Vercel's documented
+// pattern), which is the real guard. Listed as a prefix, not the one
+// exact route, so a second cron route can't silently reintroduce the
+// same bug.
+const PUBLIC_PATHS = ["/login", "/api/cron"];
+
+/**
+ * True when `path` is a public route, or sits underneath one as a path
+ * segment.
+ *
+ * Deliberately not a bare `startsWith`, which is what middleware.ts used
+ * to do: that treated anything merely *prefixed* by a public path as
+ * public too, so a future `/login-history` or `/api/cronjobs-admin`
+ * route would have been reachable with no session by nothing more than
+ * its name. Matching on the segment boundary — the same rule
+ * `isOwnerOnlyRoute` above already uses — keeps the list meaning exactly
+ * what it says.
+ */
+export function isPublicRoute(path: string): boolean {
+  return PUBLIC_PATHS.some(
+    (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)
+  );
+}
+
 /** The subset of `AppSettings` (lib/settings.ts) that cost-gating needs. */
 export interface CostSettingsLike {
   showCostToAssistant: boolean;

@@ -1,9 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-
-// Paths reachable without a session. Everything else (all (dashboard)
-// routes) requires auth.
-const PUBLIC_PATHS = ["/login"];
+// Which paths are reachable without a session, and why, lives in
+// lib/permissions.ts next to isOwnerOnlyRoute — both are route-matching
+// rules of the same shape, and keeping it there makes it unit-testable
+// without standing up a request.
+import { isPublicRoute } from "@/lib/permissions";
 
 /**
  * Refreshes the Supabase session on every request and redirects
@@ -52,11 +53,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicPath = PUBLIC_PATHS.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
-  );
-
-  if (!user && !isPublicPath) {
+  if (!user && !isPublicRoute(request.nextUrl.pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
