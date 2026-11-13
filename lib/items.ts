@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordAudit } from "@/lib/audit";
+import { getRole, canSeeCost } from "@/lib/permissions";
+import { getSettings } from "@/lib/settings";
 
 /** One `items` row. See supabase/migrations/0001_init.sql. */
 export interface Item {
@@ -73,4 +75,81 @@ export async function listItems(supabase: SupabaseClient): Promise<Item[]> {
   }
 
   return data ?? [];
+}
+
+/**
+ * One `batches` row (see supabase/migrations/0001_init.sql) as returned to
+ * a specific viewer by `getItemBatchesForViewer`. `unit_cost` is present
+ * only when that viewer is permitted to see cost data — absent (not just
+ * zeroed) otherwise, so a caller can't mistake "hidden" for "free".
+ */
+export interface ViewerBatch {
+  id: string;
+  item_id: string;
+  batch_date: string;
+  qty_received: number;
+  qty_remaining: number;
+  unit_cost?: number;
+  source: "purchase" | "opening_stock";
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/**
+ * Fetches `itemId`'s batches (oldest first) for display to whichever
+ * caller `supabase`'s session belongs to, stripping `unit_cost` from
+ * every row when `canSeeCost` (lib/permissions.ts) says that caller's
+ * role shouldn't see cost data (an assistant, unless the owner has set
+ * `app_settings.show_cost_to_assistant`).
+ *
+ * This is the single shared place batch cost gets hidden server-side —
+ * the item detail page, the stock list (Task 13), and any future export
+ * all read batches through here instead of each re-deriving the rule
+ * themselves, per the plan's "cost must be gated where the data is read,
+ * not just hidden in the UI" constraint. There's no computed inventory
+ * value (qty * cost) here yet — Task 12 is expected to add one once an
+ * item-level stock summary exists, and it must strip the same way.
+ */
+export async function getItemBatchesForViewer(
+  supabase: SupabaseClient,
+  itemId: string
+): Promise<ViewerBatch[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const profile = user
+    ? (
+        await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single()
+      ).data
+    : null;
+  const role = getRole(profile);
+  const settings = await getSettings(supabase);
+
+  const { data, error } = await supabase
+    .from("batches")
+    .select("*")
+    .eq("item_id", itemId)
+    .order("batch_date");
+
+  if (error) {
+    throw error;
+  }
+
+  const batches = (data ?? []) as ViewerBatch[];
+
+  if (canSeeCost(role, settings)) {
+    return batches;
+  }
+
+  return batches.map((batch) => {
+    const stripped: ViewerBatch = { ...batch };
+    delete stripped.unit_cost;
+    return stripped;
+  });
 }

@@ -27,3 +27,23 @@ export function isOwnerOnlyRoute(path: string): boolean {
     (ownerPath) => path === ownerPath || path.startsWith(`${ownerPath}/`)
   );
 }
+
+/** The subset of `AppSettings` (lib/settings.ts) that cost-gating needs. */
+export interface CostSettingsLike {
+  showCostToAssistant: boolean;
+}
+
+/**
+ * True when `role` may see cost data — a batch's `unit_cost` and any
+ * inventory value computed from it. An owner can always see it; an
+ * assistant can only when the owner has opted in via
+ * `app_settings.show_cost_to_assistant` (Task 2/11).
+ *
+ * This is the single rule every cost-gated data read calls through
+ * (`getItemBatchesForViewer` in lib/items.ts, and Tasks 12/13's data
+ * shaping) so cost is stripped server-side wherever it's read, not just
+ * hidden by a UI component.
+ */
+export function canSeeCost(role: Role, settings: CostSettingsLike): boolean {
+  return role === "owner" || settings.showCostToAssistant;
+}
