@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { isOwnerOnlyRoute, type Role } from "@/lib/permissions";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -80,9 +81,14 @@ function NavContent({
   return (
     <>
       <div className="px-2">
-        <span className="text-xl font-extrabold tracking-tight text-white">
-          Auto<span className="text-brand-gold">Batt</span>
-        </span>
+        <Image
+          src="/logo.png"
+          alt="Auto Batt"
+          width={480}
+          height={480}
+          priority
+          className="h-10 w-10 rounded-md"
+        />
       </div>
       <nav className="flex flex-col gap-1">
         {SHARED_LINKS.map((link) => (
@@ -151,9 +157,13 @@ export function Sidebar({ role, pathname }: { role: Role; pathname: string }) {
           <span className="h-0.5 w-5 rounded bg-white" />
           <span className="h-0.5 w-5 rounded bg-white" />
         </button>
-        <span className="text-lg font-extrabold tracking-tight text-white">
-          Auto<span className="text-brand-gold">Batt</span>
-        </span>
+        <Image
+          src="/logo.png"
+          alt="Auto Batt"
+          width={480}
+          height={480}
+          className="h-8 w-8 rounded-md"
+        />
       </div>
 
       {/* Mobile drawer overlay */}

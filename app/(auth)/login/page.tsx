@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 
@@ -35,6 +36,14 @@ export default function LoginPage() {
   return (
     <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 dark:bg-black">
       <div className="w-full max-w-sm rounded-lg border border-black/10 bg-white p-8 dark:border-white/10 dark:bg-zinc-950">
+        <Image
+          src="/logo.png"
+          alt="Auto Batt"
+          width={480}
+          height={480}
+          priority
+          className="mx-auto mb-6 h-20 w-20 rounded-lg"
+        />
         <h1 className="mb-6 text-xl font-semibold text-zinc-950 dark:text-zinc-50">
           Sign in
         </h1>
