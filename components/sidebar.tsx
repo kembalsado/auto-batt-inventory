@@ -181,7 +181,14 @@ export function Sidebar({ role, pathname }: { role: Role; pathname: string }) {
       )}
 
       {/* Desktop sidebar */}
-      <aside className="hidden h-full w-56 flex-col gap-6 bg-brand-green px-4 py-6 md:flex print:hidden">
+      {/* No h-full here: this aside is a child of the content row's default
+          (align-items: normal/stretch) flexbox, which already stretches it
+          to match <main>'s height. Pairing h-full (height: 100%) with that
+          same stretched, flex-grow-derived parent height caused the
+          percentage to resolve against a stale/indefinite size and come up
+          short (verified live: 567px of actual vs. 733px available) —
+          stretch alone fills the row exactly, with no percentage involved. */}
+      <aside className="hidden w-56 flex-col gap-6 bg-brand-green px-4 py-6 md:flex print:hidden">
         <NavContent role={role} pathname={pathname} onNavigate={() => {}} />
       </aside>
     </>
