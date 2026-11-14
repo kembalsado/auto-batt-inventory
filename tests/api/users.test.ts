@@ -185,3 +185,149 @@ test("an unauthenticated request is rejected", async () => {
   expect(res.status).toBe(307);
   expect(res.headers.get("location")).toContain("/login");
 });
+
+describe("PATCH /api/users/[id]", () => {
+  test("owner can deactivate another user, locking them out, then reactivate them", async () => {
+    const admin = createAdminClient();
+    const { data: owner } = await admin.auth.admin.createUser({
+      email: "test-users-patch-owner-1@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "owner" },
+    });
+    createdUserIds.push(owner!.user!.id);
+
+    const { data: target } = await admin.auth.admin.createUser({
+      email: "test-users-patch-target-1@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "assistant" },
+    });
+    createdUserIds.push(target!.user!.id);
+
+    const cookie = await signInCookieHeader(
+      "test-users-patch-owner-1@example.com",
+      "test-password-123"
+    );
+
+    const deactivateRes = await fetch(`${BASE_URL}/api/users/${target!.user!.id}`, {
+      method: "PATCH",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(deactivateRes.status).toBe(200);
+
+    // The real proof a deactivation matters: GoTrue itself now refuses
+    // this account's own sign-in, not just that some flag flipped.
+    const lockedOut = createBrowserClient();
+    const { error: signInError } = await lockedOut.auth.signInWithPassword({
+      email: "test-users-patch-target-1@example.com",
+      password: "test-password-123",
+    });
+    expect(signInError).toBeTruthy();
+
+    const { data: audit } = await admin
+      .from("audit_log")
+      .select("action, summary")
+      .eq("entity_id", target!.user!.id)
+      .eq("action", "user.deactivated")
+      .maybeSingle();
+    expect(audit?.action).toBe("user.deactivated");
+
+    const reactivateRes = await fetch(`${BASE_URL}/api/users/${target!.user!.id}`, {
+      method: "PATCH",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ isActive: true }),
+    });
+    expect(reactivateRes.status).toBe(200);
+
+    const reactivated = createBrowserClient();
+    const { error: secondSignInError } = await reactivated.auth.signInWithPassword({
+      email: "test-users-patch-target-1@example.com",
+      password: "test-password-123",
+    });
+    expect(secondSignInError).toBeNull();
+  });
+
+  test("an owner cannot deactivate their own account", async () => {
+    const admin = createAdminClient();
+    const { data: owner } = await admin.auth.admin.createUser({
+      email: "test-users-patch-self@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "owner" },
+    });
+    createdUserIds.push(owner!.user!.id);
+
+    const cookie = await signInCookieHeader(
+      "test-users-patch-self@example.com",
+      "test-password-123"
+    );
+
+    const res = await fetch(`${BASE_URL}/api/users/${owner!.user!.id}`, {
+      method: "PATCH",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(res.status).toBe(400);
+
+    // Confirm it's genuinely still active, not just that the request
+    // happened to fail for an unrelated reason.
+    const { data: refreshed } = await admin.auth.admin.getUserById(owner!.user!.id);
+    expect(refreshed.user?.banned_until).toBeFalsy();
+  });
+
+  test("an assistant cannot deactivate another user", async () => {
+    const admin = createAdminClient();
+    const { data: assistant } = await admin.auth.admin.createUser({
+      email: "test-users-patch-assistant@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "assistant" },
+    });
+    createdUserIds.push(assistant!.user!.id);
+
+    const { data: target } = await admin.auth.admin.createUser({
+      email: "test-users-patch-target-2@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "assistant" },
+    });
+    createdUserIds.push(target!.user!.id);
+
+    const cookie = await signInCookieHeader(
+      "test-users-patch-assistant@example.com",
+      "test-password-123"
+    );
+
+    const res = await fetch(`${BASE_URL}/api/users/${target!.user!.id}`, {
+      method: "PATCH",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(res.status).toBe(403);
+
+    const { data: refreshed } = await admin.auth.admin.getUserById(target!.user!.id);
+    expect(refreshed.user?.banned_until).toBeFalsy();
+  });
+
+  test("an unauthenticated PATCH request is rejected", async () => {
+    const admin = createAdminClient();
+    const { data: target } = await admin.auth.admin.createUser({
+      email: "test-users-patch-target-3@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+      user_metadata: { role: "assistant" },
+    });
+    createdUserIds.push(target!.user!.id);
+
+    const res = await fetch(`${BASE_URL}/api/users/${target!.user!.id}`, {
+      method: "PATCH",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+});

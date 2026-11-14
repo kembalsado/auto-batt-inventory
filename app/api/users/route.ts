@@ -2,8 +2,41 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRole } from "@/lib/permissions";
-import { createUserAsOwner, type CreateUserInput } from "@/lib/users";
+import { createUserAsOwner, listUsers, type CreateUserInput } from "@/lib/users";
 import { describeError } from "@/lib/errors";
+
+/**
+ * GET /api/users — owner-only. Lists every user for the Users table
+ * (lib/users.ts's `listUsers` does the actual merge of auth.users +
+ * profiles). Same 401/403 guards as POST below, for the same reason.
+ */
+export async function GET() {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (getRole(profile) !== "owner") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    const users = await listUsers(createAdminClient());
+    return NextResponse.json({ users });
+  } catch (error) {
+    return NextResponse.json({ error: describeError(error) }, { status: 400 });
+  }
+}
 
 /**
  * POST /api/users — owner-only. Creates a new Supabase Auth user (and, via

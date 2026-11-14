@@ -19,6 +19,11 @@ const ACTIONS = [
   // until the final review, so the Add User screen's activity was
   // unfilterable even though the rows were being recorded.
   "user.created",
+  // Written by setUserActive (lib/users.ts) for the Users table's
+  // deactivate/reactivate action — added alongside it this time, not
+  // after the fact like "user.created" above.
+  "user.deactivated",
+  "user.activated",
 ];
 
 function formatDate(value: string): string {
