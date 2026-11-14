@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { recordStockIn } from "@/lib/movements";
 import { manilaToday } from "@/lib/date";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 async function addStockIn(formData: FormData) {
   "use server";
@@ -76,64 +79,60 @@ export function StockInForm({
       {errorMessage && (
         <p
           role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {errorMessage}
         </p>
       )}
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Quantity
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="in-qty">Quantity</Label>
         {/* `min` is a positive value, not 0: a quantity of zero is not a
             stock movement, and the server action rejects it too. */}
-        <input
+        <Input
+          id="in-qty"
           name="qty"
           type="number"
           min="0.01"
           step="any"
           required
-          className="rounded-md border border-border px-3 py-2 text-sm"
+          className="h-11"
         />
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Unit cost
-        <input
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="in-unitCost">Unit cost</Label>
+        <Input
+          id="in-unitCost"
           name="unitCost"
           type="number"
           min="0"
           step="any"
           required
-          className="rounded-md border border-border px-3 py-2 text-sm"
+          className="h-11"
         />
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Date
-        <input
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="in-batchDate">Date</Label>
+        <Input
+          id="in-batchDate"
           name="batchDate"
           type="date"
           defaultValue={today}
           required
-          className="rounded-md border border-border px-3 py-2 text-sm"
+          className="h-11"
         />
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Note
-        <input
-          name="note"
-          placeholder="Optional"
-          className="rounded-md border border-border px-3 py-2 text-sm"
-        />
-      </label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="in-note">Note</Label>
+        <Input id="in-note" name="note" placeholder="Optional" className="h-11" />
+      </div>
 
-      <button
-        type="submit"
-        className="mt-2 w-full rounded-md bg-brand-green px-4 py-3 text-sm font-medium text-white"
-      >
+      <Button type="submit" size="touch" className="mt-2 w-full">
         Record stock IN
-      </button>
+      </Button>
     </form>
   );
 }

@@ -1,6 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "@/lib/supabase/server";
 import { getSettings, updateSettings } from "@/lib/settings";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 async function saveSettings(formData: FormData) {
   "use server";
@@ -65,50 +68,51 @@ export default async function SettingsPage() {
             type="checkbox"
             name="showCostToAssistant"
             defaultChecked={settings.showCostToAssistant}
+            className="size-4 accent-primary"
           />
           Show cost to assistant
         </label>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Default low-stock threshold
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="defaultLowStockThreshold">Default low-stock threshold</Label>
+          <Input
+            id="defaultLowStockThreshold"
             name="defaultLowStockThreshold"
             type="number"
             min="0"
             step="any"
             required
             defaultValue={settings.defaultLowStockThreshold}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Notification email(s)
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="notificationEmails">Notification email(s)</Label>
+          <Input
+            id="notificationEmails"
             name="notificationEmails"
             placeholder="owner@example.com, assistant@example.com"
             defaultValue={settings.notificationEmails.join(", ")}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Daily email send time
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dailyEmailSendTime">Daily email send time</Label>
+          <Input
+            id="dailyEmailSendTime"
             name="dailyEmailSendTime"
             type="time"
             required
             defaultValue={settings.dailyEmailSendTime.slice(0, 5)}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <button
-          type="submit"
-          className="mt-2 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
-        >
+        <Button type="submit" size="touch" className="mt-2">
           Save settings
-        </button>
+        </Button>
       </form>
     </div>
   );

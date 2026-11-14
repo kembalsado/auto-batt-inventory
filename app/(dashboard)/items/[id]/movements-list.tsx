@@ -75,12 +75,12 @@ export function MovementsList({
           type="button"
           onClick={() => handleVoid(m.id)}
           disabled={isPending && pendingId === m.id}
-          className="text-sm text-red-600 underline disabled:opacity-50"
+          className="text-sm text-destructive underline disabled:opacity-50"
         >
           {isPending && pendingId === m.id ? "Voiding…" : "Void"}
         </button>
         {errorByRow[m.id] && (
-          <p className="mt-1 text-xs text-red-600">{errorByRow[m.id]}</p>
+          <p className="mt-1 text-xs text-destructive">{errorByRow[m.id]}</p>
         )}
       </>
     );
@@ -105,7 +105,14 @@ export function MovementsList({
           {movements.map((m) => {
             const voided = m.voidedAt != null;
             return (
-              <tr key={m.id} className={voided ? "text-muted-foreground" : "text-brand-ink"}>
+              <tr
+                key={m.id}
+                className={
+                  voided
+                    ? "text-muted-foreground"
+                    : "text-brand-ink transition-colors hover:bg-muted/40"
+                }
+              >
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.movementDate}</td>
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.type}</td>
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.quantity}</td>

@@ -3,6 +3,7 @@
 import { Fragment, useState, type FormEvent } from "react";
 import { submitOpeningStockImport } from "./actions";
 import type { OpeningStockRow } from "@/lib/import";
+import { Button } from "@/components/ui/button";
 
 interface DraftRow {
   sku: string;
@@ -181,7 +182,7 @@ export default function ImportPage() {
                         type="button"
                         onClick={() => removeRow(index)}
                         disabled={rows.length === 1}
-                        className="text-sm text-red-600 disabled:opacity-40"
+                        className="text-sm text-destructive disabled:opacity-40"
                       >
                         Remove
                       </button>
@@ -189,7 +190,7 @@ export default function ImportPage() {
                   </tr>
                   {errorsByRow.has(index) && (
                     <tr>
-                      <td colSpan={7} className="pb-2 text-sm text-red-600" role="alert">
+                      <td colSpan={7} className="pb-2 text-sm text-destructive" role="alert">
                         Row {index + 1}: {errorsByRow.get(index)}
                       </td>
                     </tr>
@@ -201,20 +202,12 @@ export default function ImportPage() {
         </div>
 
         <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={addRow}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
-          >
+          <Button type="button" variant="outline" size="touch" onClick={addRow}>
             Add row
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-          >
+          </Button>
+          <Button type="submit" size="touch" disabled={submitting}>
             {submitting ? "Importing…" : "Import"}
-          </button>
+          </Button>
         </div>
       </form>
 

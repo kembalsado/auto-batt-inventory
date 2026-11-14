@@ -3,30 +3,45 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import {
+  LayoutDashboard,
+  Package,
+  Tags,
+  ClipboardList,
+  CalendarDays,
+  Upload,
+  Users,
+  History,
+  Settings,
+  Menu,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { isOwnerOnlyRoute, type Role } from "@/lib/permissions";
 import { SignOutButton } from "@/components/sign-out-button";
 
 interface NavLink {
   href: string;
   label: string;
+  icon: LucideIcon;
 }
 
 // Order matches the brief: shared links first, then owner-only links.
 // Whether a link is owner-only is derived from isOwnerOnlyRoute rather
 // than flagged per-entry, so the nav and the route guard can't drift.
 const SHARED_LINKS: NavLink[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/items", label: "Items" },
-  { href: "/categories", label: "Categories" },
-  { href: "/stock-list", label: "Stock List" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/import", label: "Import" },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/items", label: "Items", icon: Package },
+  { href: "/categories", label: "Categories", icon: Tags },
+  { href: "/stock-list", label: "Stock List", icon: ClipboardList },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/import", label: "Import", icon: Upload },
 ];
 
 const OWNER_LINKS: NavLink[] = [
-  { href: "/users", label: "Users" },
-  { href: "/activity", label: "Activity" },
-  { href: "/settings", label: "Settings" },
+  { href: "/users", label: "Users", icon: Users },
+  { href: "/activity", label: "Activity", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -43,16 +58,18 @@ function NavItem({
   onNavigate: () => void;
 }) {
   const active = isActive(pathname, link.href);
+  const Icon = link.icon;
   return (
     <Link
       href={link.href}
       onClick={onNavigate}
       className={
         active
-          ? "rounded-md bg-brand-green-light px-3 py-2 text-sm font-semibold text-white"
-          : "rounded-md px-3 py-2 text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
+          ? "flex items-center gap-2.5 rounded-md bg-brand-green-light px-3 py-2.5 text-sm font-semibold text-white"
+          : "flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
       }
     >
+      <Icon className="size-4.5 shrink-0" aria-hidden="true" />
       {link.label}
     </Link>
   );
@@ -151,11 +168,13 @@ export function Sidebar({ role, pathname }: { role: Role; pathname: string }) {
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-md hover:bg-brand-green-light/60"
+          className="flex h-11 w-11 items-center justify-center rounded-md text-white hover:bg-brand-green-light/60"
         >
-          <span className="h-0.5 w-5 rounded bg-white" />
-          <span className="h-0.5 w-5 rounded bg-white" />
-          <span className="h-0.5 w-5 rounded bg-white" />
+          {open ? (
+            <X className="size-5" aria-hidden="true" />
+          ) : (
+            <Menu className="size-5" aria-hidden="true" />
+          )}
         </button>
         <Image
           src="/logo.png"

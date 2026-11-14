@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { recordStockOut, InsufficientStockError } from "@/lib/movements";
 import { manilaToday } from "@/lib/date";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 async function addStockOut(formData: FormData) {
   "use server";
@@ -93,7 +96,7 @@ export function StockOutForm({
       {insufficientStockAvailable != null && (
         <p
           role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           Not enough stock — only {insufficientStockAvailable} available.
         </p>
@@ -102,52 +105,47 @@ export function StockOutForm({
       {errorMessage && (
         <p
           role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {errorMessage}
         </p>
       )}
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Quantity
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="out-qty">Quantity</Label>
         {/* `min` is a positive value, not 0 — see the matching note in
             stock-in-form.tsx. */}
-        <input
+        <Input
+          id="out-qty"
           name="qty"
           type="number"
           min="0.01"
           step="any"
           required
-          className="rounded-md border border-border px-3 py-2 text-sm"
+          className="h-11"
         />
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Date
-        <input
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="out-movementDate">Date</Label>
+        <Input
+          id="out-movementDate"
           name="movementDate"
           type="date"
           defaultValue={today}
           required
-          className="rounded-md border border-border px-3 py-2 text-sm"
+          className="h-11"
         />
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1 text-sm text-brand-ink">
-        Note
-        <input
-          name="note"
-          placeholder="Optional"
-          className="rounded-md border border-border px-3 py-2 text-sm"
-        />
-      </label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="out-note">Note</Label>
+        <Input id="out-note" name="note" placeholder="Optional" className="h-11" />
+      </div>
 
-      <button
-        type="submit"
-        className="mt-2 w-full rounded-md bg-brand-green px-4 py-3 text-sm font-medium text-white"
-      >
+      <Button type="submit" size="touch" className="mt-2 w-full">
         Record stock OUT
-      </button>
+      </Button>
     </form>
   );
 }

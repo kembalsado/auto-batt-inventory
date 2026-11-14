@@ -1,6 +1,7 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { listAuditLog } from "@/lib/activity";
 import { listItems } from "@/lib/items";
+import { Button } from "@/components/ui/button";
 
 // The fixed set of `action` values any mutating task writes (see
 // lib/categories.ts, lib/items.ts, lib/settings.ts, and the SQL functions
@@ -93,7 +94,7 @@ export default async function ActivityPage({
           <select
             name="itemId"
             defaultValue={itemId ?? ""}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">All items</option>
             {items.map((item) => (
@@ -109,7 +110,7 @@ export default async function ActivityPage({
           <select
             name="actorId"
             defaultValue={actorId ?? ""}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">All users</option>
             {profiles.map((profile) => (
@@ -125,7 +126,7 @@ export default async function ActivityPage({
           <select
             name="action"
             defaultValue={action ?? ""}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">All actions</option>
             {ACTIONS.map((actionValue) => (
@@ -136,19 +137,13 @@ export default async function ActivityPage({
           </select>
         </label>
 
-        <button
-          type="submit"
-          className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
-        >
+        <Button type="submit" size="touch">
           Filter
-        </button>
+        </Button>
         {hasFilters && (
-          <a
-            href="/activity"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
-          >
-            Clear
-          </a>
+          <Button asChild variant="outline" size="touch">
+            <a href="/activity">Clear</a>
+          </Button>
         )}
       </form>
 
@@ -169,7 +164,7 @@ export default async function ActivityPage({
           </thead>
           <tbody className="divide-y divide-border">
             {entries.map((entry) => (
-              <tr key={entry.id} className="text-brand-ink">
+              <tr key={entry.id} className="text-brand-ink transition-colors hover:bg-muted/40">
                 <td className="py-2">{formatDate(entry.createdAt)}</td>
                 <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
                 <td className="py-2">{entry.action}</td>

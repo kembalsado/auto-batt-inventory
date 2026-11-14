@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { createCategory, listCategories } from "@/lib/categories";
 import { isUniqueViolation } from "@/lib/errors";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 async function addCategory(formData: FormData) {
   "use server";
@@ -64,25 +66,22 @@ export default async function CategoriesPage({
       <h1 className="text-2xl font-semibold text-brand-ink">Categories</h1>
 
       <form action={addCategory} className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <input
+        <Input
           name="name"
           required
           defaultValue={name ?? ""}
           placeholder="Category name"
-          className="w-full rounded-md border border-border px-3 py-2 text-sm sm:w-64"
+          className="h-11 w-full sm:w-64"
         />
-        <button
-          type="submit"
-          className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
-        >
+        <Button type="submit" size="touch">
           Add category
-        </button>
+        </Button>
       </form>
 
       {errorMessage && (
         <p
           role="alert"
-          className="mt-3 max-w-md rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="mt-3 max-w-md rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {errorMessage}
         </p>

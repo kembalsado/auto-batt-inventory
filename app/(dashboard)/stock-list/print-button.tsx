@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+
 /**
  * Triggers the browser's native print dialog for the stock list page.
  * A client component only because `window.print()` needs one — the page
@@ -10,12 +12,14 @@
  */
 export function PrintButton() {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="touch"
       onClick={() => window.print()}
-      className="print:hidden rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
+      className="print:hidden"
     >
       Print
-    </button>
+    </Button>
   );
 }

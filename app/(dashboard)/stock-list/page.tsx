@@ -2,6 +2,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { getRole, canSeeCost } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { buildStockListRows } from "@/lib/stock-list";
+import { Button } from "@/components/ui/button";
 import { PrintButton } from "./print-button";
 
 function formatCurrency(value: number): string {
@@ -61,18 +62,12 @@ export default async function StockListPage() {
         <h1 className="text-2xl font-semibold text-brand-ink">Stock List</h1>
         <div className="flex flex-wrap gap-2">
           <PrintButton />
-          <a
-            href="/api/stock-list/pdf"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
-          >
-            Export PDF
-          </a>
-          <a
-            href="/api/stock-list/excel"
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium text-brand-ink hover:bg-accent"
-          >
-            Export Excel
-          </a>
+          <Button asChild variant="outline" size="touch">
+            <a href="/api/stock-list/pdf">Export PDF</a>
+          </Button>
+          <Button asChild variant="outline" size="touch">
+            <a href="/api/stock-list/excel">Export Excel</a>
+          </Button>
         </div>
       </div>
 
@@ -98,7 +93,7 @@ export default async function StockListPage() {
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((row) => (
-            <tr key={row.sku} className="text-brand-ink">
+            <tr key={row.sku} className="text-brand-ink transition-colors hover:bg-muted/40 print:hover:bg-transparent">
               <td className="py-2">{row.sku}</td>
               <td className="py-2">{row.name}</td>
               <td className="py-2">{row.category}</td>

@@ -7,6 +7,7 @@ import {
   BatchAlreadySoldError,
 } from "@/lib/movements";
 import { getItemStockSummary } from "@/lib/stock";
+import { Badge } from "@/components/ui/badge";
 import { StockInForm } from "./stock-in-form";
 import { StockOutForm } from "./stock-out-form";
 import { MovementsList, type VoidActionResult } from "./movements-list";
@@ -104,11 +105,7 @@ export default async function ItemDetailPage({
     <div>
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-semibold text-brand-ink">{item.name}</h1>
-        {summary.isLowStock && (
-          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
-            Low stock
-          </span>
-        )}
+        {summary.isLowStock && <Badge variant="warning">Low stock</Badge>}
       </div>
       <p className="text-sm text-muted-foreground">{item.sku}</p>
       <p className="mt-2 text-sm text-brand-ink">

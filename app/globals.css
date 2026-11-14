@@ -16,7 +16,11 @@
   --color-brand-green-light: #1e6b3f;
   --color-brand-ink: #1a1a1a;
   --color-brand-gold: #e8c765;
-  --color-brand-gold-dark: #92661a;
+  /* #92661a measured 4.49:1 on --color-brand-warn-bg — just under the
+     4.5:1 AA floor for the small (text-xs) "Low stock" badge text that's
+     its main use. Darkened to clear AA with margin; still reads as the
+     same gold at a glance. */
+  --color-brand-gold-dark: #7a5313;
   --color-brand-warn-bg: #fbf0d9;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -68,7 +72,11 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  /* shadcn's default neutral base color swapped for the Auto Batt brand
+     green/gold, so Button/Badge/Input (and the global focus ring below)
+     render on-brand instead of generic grayscale — this is what the
+     login page's button was missing before. */
+  --primary: #15502f;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -79,7 +87,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #1e6b3f;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -103,8 +111,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: #1e6b3f;
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);

@@ -3,6 +3,9 @@ import { createServerClient } from "@/lib/supabase/server";
 import { createItem } from "@/lib/items";
 import { listCategories } from "@/lib/categories";
 import { isUniqueViolation } from "@/lib/errors";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 async function addItem(formData: FormData) {
   "use server";
@@ -87,38 +90,35 @@ export default async function NewItemPage({
         {errorMessage && (
           <p
             role="alert"
-            className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+            className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             {errorMessage}
           </p>
         )}
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          SKU
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="sku">SKU</Label>
+          <Input
+            id="sku"
             name="sku"
             required
             defaultValue={sku ?? ""}
             placeholder="AB-001"
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Name
-          <input
-            name="name"
-            required
-            placeholder="12V Battery"
-            className="rounded-md border border-border px-3 py-2 text-sm"
-          />
-        </label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" name="name" required placeholder="12V Battery" className="h-11" />
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Category
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="categoryId">Category</Label>
           <select
+            id="categoryId"
             name="categoryId"
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">None</option>
             {categories.map((category) => (
@@ -127,35 +127,29 @@ export default async function NewItemPage({
               </option>
             ))}
           </select>
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Unit
-          <input
-            name="unit"
-            defaultValue="pcs"
-            className="rounded-md border border-border px-3 py-2 text-sm"
-          />
-        </label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="unit">Unit</Label>
+          <Input id="unit" name="unit" defaultValue="pcs" className="h-11" />
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Low stock threshold
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="lowStockThreshold">Low stock threshold</Label>
+          <Input
+            id="lowStockThreshold"
             name="lowStockThreshold"
             type="number"
             min="0"
             step="any"
             placeholder="Optional"
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <button
-          type="submit"
-          className="mt-2 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
-        >
+        <Button type="submit" size="touch" className="mt-2">
           Add item
-        </button>
+        </Button>
       </form>
     </div>
   );

@@ -1,3 +1,4 @@
+import { LogOut } from "lucide-react";
 import { signOutAction } from "@/lib/actions/sign-out";
 
 /**
@@ -25,8 +26,9 @@ export function SignOutButton() {
     <form action={signOutAction}>
       <button
         type="submit"
-        className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
+        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
       >
+        <LogOut className="size-4.5 shrink-0" aria-hidden="true" />
         Sign out
       </button>
     </form>

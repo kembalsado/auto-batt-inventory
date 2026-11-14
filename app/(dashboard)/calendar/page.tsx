@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import { daysInMonth, firstWeekdayOfMonth, getMonthActivity } from "@/lib/calendar";
 import { buildDailySummary } from "@/lib/email/dailySummary";
@@ -81,20 +82,20 @@ export default async function CalendarPage({
         <div className="flex items-center justify-between bg-brand-green px-4 py-3 text-white">
           <Link
             href={monthHref(prev.year, prev.month)}
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-sm hover:bg-white/20"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
             aria-label="Previous month"
           >
-            ‹
+            <ChevronLeft className="size-4" aria-hidden="true" />
           </Link>
           <span className="text-base font-extrabold">
             {MONTH_NAMES[month - 1]} {year}
           </span>
           <Link
             href={monthHref(next.year, next.month)}
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-sm hover:bg-white/20"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
             aria-label="Next month"
           >
-            ›
+            <ChevronRight className="size-4" aria-hidden="true" />
           </Link>
         </div>
 
@@ -136,7 +137,7 @@ export default async function CalendarPage({
                       className="mt-auto flex flex-col gap-0.5"
                     >
                       {activity.qtyIn > 0 && (
-                        <span className="w-fit rounded bg-green-100 px-1.5 py-0.5 text-[10.5px] font-extrabold text-green-700">
+                        <span className="w-fit rounded bg-brand-green/10 px-1.5 py-0.5 text-[10.5px] font-extrabold text-brand-green">
                           +{activity.qtyIn}
                         </span>
                       )}
@@ -162,9 +163,9 @@ export default async function CalendarPage({
               <Link
                 href={monthHref(year, month)}
                 aria-label="Close"
-                className="text-lg leading-none"
+                className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-white/20"
               >
-                ✕
+                <X className="size-4" aria-hidden="true" />
               </Link>
             </div>
             <div className="max-h-[60vh] overflow-y-auto p-4">
@@ -182,7 +183,7 @@ export default async function CalendarPage({
                     </span>
                     <span className="flex gap-1.5">
                       {item.qtyIn > 0 && (
-                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10.5px] font-extrabold text-green-700">
+                        <span className="rounded bg-brand-green/10 px-1.5 py-0.5 text-[10.5px] font-extrabold text-brand-green">
                           +{item.qtyIn}
                         </span>
                       )}

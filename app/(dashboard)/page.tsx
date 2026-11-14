@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { Package, TriangleAlert, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import { getDashboardSummary } from "@/lib/dashboard";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Dashboard home: four stat tiles (total active items, items currently
@@ -26,24 +28,28 @@ export default async function DashboardHomePage() {
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-border bg-card p-4">
+          <Package className="mb-2 size-5 text-muted-foreground" aria-hidden="true" />
           <span className="block text-2xl font-bold text-brand-ink">
             {summary.totalActiveItems}
           </span>
           <span className="text-xs text-muted-foreground">Total Items</span>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
+          <TriangleAlert className="mb-2 size-5 text-brand-gold-dark" aria-hidden="true" />
           <span className="block text-2xl font-bold text-brand-gold-dark">
             {summary.lowStockCount}
           </span>
           <span className="text-xs text-muted-foreground">Low Stock</span>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
+          <ArrowDownToLine className="mb-2 size-5 text-brand-green" aria-hidden="true" />
           <span className="block text-2xl font-bold text-brand-green">
             {summary.qtyInToday}
           </span>
           <span className="text-xs text-muted-foreground">IN today</span>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
+          <ArrowUpFromLine className="mb-2 size-5 text-brand-gold-dark" aria-hidden="true" />
           <span className="block text-2xl font-bold text-brand-gold-dark">
             {summary.qtyOutToday}
           </span>
@@ -70,9 +76,9 @@ export default async function DashboardHomePage() {
                 >
                   {item.name}
                 </Link>
-                <span className="rounded-full bg-brand-warn-bg px-2 py-0.5 text-xs font-medium text-brand-gold-dark">
+                <Badge variant="warning">
                   {item.qtyOnHand} {item.unit} left
-                </span>
+                </Badge>
               </li>
             ))}
           </ul>

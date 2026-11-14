@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import { getRole } from "@/lib/permissions";
 import { buildStockListRows } from "@/lib/stock-list";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Items list: one row per item (SKU, name, category, unit, qty on hand,
@@ -46,12 +49,12 @@ export default async function ItemsPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-brand-ink">Items</h1>
-        <Link
-          href="/items/new"
-          className="rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white"
-        >
-          Add item
-        </Link>
+        <Button asChild size="touch">
+          <Link href="/items/new">
+            <Plus aria-hidden="true" />
+            Add item
+          </Link>
+        </Button>
       </div>
 
       {/* Table at md and up (same breakpoint the sidebar collapses at);
@@ -70,16 +73,16 @@ export default async function ItemsPage() {
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((row) => (
-            <tr key={row.id} className="text-brand-ink">
+            <tr key={row.id} className="text-brand-ink transition-colors hover:bg-muted/40">
               <td className="py-2">{row.sku}</td>
               <td className="py-2">
                 <Link href={`/items/${row.id}`} className="hover:underline">
                   {row.name}
                 </Link>
                 {!row.isActive && (
-                  <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                  <Badge variant="secondary" className="ml-2">
                     Inactive
-                  </span>
+                  </Badge>
                 )}
               </td>
               <td className="py-2">{row.category}</td>
@@ -87,11 +90,7 @@ export default async function ItemsPage() {
               <td className="py-2">
                 <span className="flex items-center gap-2">
                   {row.qtyOnHand}
-                  {row.isLowStock && (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                      Low
-                    </span>
-                  )}
+                  {row.isLowStock && <Badge variant="warning">Low</Badge>}
                 </span>
               </td>
             </tr>
@@ -114,7 +113,7 @@ export default async function ItemsPage() {
           <Link
             key={row.id}
             href={`/items/${row.id}`}
-            className="rounded-lg border border-border bg-card p-3"
+            className="rounded-lg border border-border bg-card p-3 transition-colors active:bg-muted/40"
           >
             <div className="flex items-center justify-between">
               <span className="font-medium text-brand-ink">{row.name}</span>
@@ -124,16 +123,8 @@ export default async function ItemsPage() {
               <span className="text-muted-foreground">{row.category}</span>
               <span className="flex items-center gap-2 text-brand-ink">
                 {row.qtyOnHand} {row.unit}
-                {row.isLowStock && (
-                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                    Low
-                  </span>
-                )}
-                {!row.isActive && (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
-                    Inactive
-                  </span>
-                )}
+                {row.isLowStock && <Badge variant="warning">Low</Badge>}
+                {!row.isActive && <Badge variant="secondary">Inactive</Badge>}
               </span>
             </div>
           </Link>

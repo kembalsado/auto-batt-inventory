@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * Owner-only "Add user" screen (gated by `isOwnerOnlyRoute` in the
@@ -56,55 +59,59 @@ export default function AddUserPage() {
         onSubmit={handleSubmit}
         className="mt-6 flex max-w-md flex-col gap-4"
       >
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Full name
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="fullName">Full name</Label>
+          <Input
+            id="fullName"
             required
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Email
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
             type="email"
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Temporary password
-          <input
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="password">Temporary password</Label>
+          <Input
+            id="password"
             type="password"
             required
             minLength={6}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11"
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1 text-sm text-brand-ink">
-          Role
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="role">Role</Label>
           <select
+            id="role"
             value={role}
             onChange={(event) =>
               setRole(event.target.value === "owner" ? "owner" : "assistant")
             }
-            className="rounded-md border border-border px-3 py-2 text-sm"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="assistant">Assistant</option>
             <option value="owner">Owner</option>
           </select>
-        </label>
+        </div>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
@@ -112,13 +119,9 @@ export default function AddUserPage() {
           <p className="text-sm text-brand-green">User created.</p>
         )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-2 rounded-md bg-brand-green px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-        >
+        <Button type="submit" size="touch" disabled={submitting} className="mt-2">
           {submitting ? "Creating…" : "Add user"}
-        </button>
+        </Button>
       </form>
     </div>
   );
