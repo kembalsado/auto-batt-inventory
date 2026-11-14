@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import type { StockListRow } from "@/lib/stock-list";
  * larger, append-only table.
  */
 export function ItemsTable({ rows }: { rows: StockListRow[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
 
   const filteredRows = useMemo(() => {
@@ -28,6 +30,18 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
         row.category.toLowerCase().includes(normalized)
     );
   }, [rows, query]);
+
+  // The whole row already highlights on hover (hover:bg-muted/40 below),
+  // but only the item name was ever an actual <Link> — so a pointer
+  // hovering the SKU/category/unit/qty cells got the highlight with no
+  // pointer cursor, a mismatched affordance a user flagged directly.
+  // Clicking anywhere in the row now navigates; skip when the click
+  // already landed on the name's own <a> so its native behavior (e.g.
+  // ctrl/cmd-click opening a new tab) isn't double-handled.
+  function handleRowClick(event: React.MouseEvent<HTMLTableRowElement>, itemId: string) {
+    if ((event.target as HTMLElement).closest("a")) return;
+    router.push(`/items/${itemId}`);
+  }
 
   return (
     <div>
@@ -63,7 +77,11 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
         </thead>
         <tbody className="divide-y divide-border">
           {filteredRows.map((row) => (
-            <tr key={row.id} className="text-brand-ink transition-colors hover:bg-muted/40">
+            <tr
+              key={row.id}
+              onClick={(event) => handleRowClick(event, row.id)}
+              className="cursor-pointer text-brand-ink transition-colors hover:bg-muted/40"
+            >
               <td className="py-2">{row.sku}</td>
               <td className="py-2">
                 <Link href={`/items/${row.id}`} className="hover:underline">
