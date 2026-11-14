@@ -3,6 +3,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRole } from "@/lib/permissions";
 import { createUserAsOwner, type CreateUserInput } from "@/lib/users";
+import { describeError } from "@/lib/errors";
 
 /**
  * POST /api/users — owner-only. Creates a new Supabase Auth user (and, via
@@ -59,7 +60,13 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ id: created.id }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create user";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // supabase-js's admin.createUser (and the recordAudit insert right
+    // after it) reject with a plain AuthError/PostgrestError-shaped
+    // object, not an `Error` instance — `error instanceof Error` was
+    // always false here, so this always fell through to a hardcoded
+    // "Failed to create user" with the real reason thrown away. Same
+    // pitfall `describeError` (lib/errors.ts) already exists for; this
+    // route just wasn't using it.
+    return NextResponse.json({ error: describeError(error) }, { status: 400 });
   }
 }
