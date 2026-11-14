@@ -4,6 +4,7 @@ import { getSettings, updateSettings } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 async function saveSettings(formData: FormData) {
   "use server";
@@ -63,15 +64,20 @@ export default async function SettingsPage() {
       <h1 className="text-2xl font-semibold text-brand-ink">Settings</h1>
 
       <form action={saveSettings} className="mt-6 flex max-w-md flex-col gap-4">
-        <label className="flex items-center gap-2 text-sm text-brand-ink">
-          <input
-            type="checkbox"
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor="showCostToAssistant">Show cost to assistant</Label>
+            <p className="text-xs text-muted-foreground">
+              Lets an assistant see unit cost and inventory value on the Stock
+              List and its exports.
+            </p>
+          </div>
+          <Switch
+            id="showCostToAssistant"
             name="showCostToAssistant"
             defaultChecked={settings.showCostToAssistant}
-            className="size-4 accent-primary"
           />
-          Show cost to assistant
-        </label>
+        </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="defaultLowStockThreshold">Default low-stock threshold</Label>
