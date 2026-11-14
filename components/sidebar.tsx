@@ -18,6 +18,7 @@ const SHARED_LINKS: NavLink[] = [
   { href: "/items", label: "Items" },
   { href: "/categories", label: "Categories" },
   { href: "/stock-list", label: "Stock List" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/import", label: "Import" },
 ];
 
