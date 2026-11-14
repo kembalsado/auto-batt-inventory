@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
@@ -155,9 +156,17 @@ function NavContent({
  * (`hidden md:flex`) — same two code paths, same `NavContent`, so there's
  * only one place the link list and active-state logic can drift.
  */
-export function Sidebar({ role, pathname }: { role: Role; pathname: string }) {
+export function Sidebar({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  // Read client-side rather than taking the server-rendered pathname as a
+  // prop: Next.js keeps this layout mounted across client-side navigation
+  // (only the page content below it re-renders), so a prop sourced from
+  // the layout's own `headers().get("x-pathname")` only updates on a full
+  // reload — the active nav highlight was stuck on whichever route the
+  // page had last been hard-loaded on. `usePathname` re-renders on every
+  // client-side route change instead.
+  const pathname = usePathname();
 
   return (
     <>

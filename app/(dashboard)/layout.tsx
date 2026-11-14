@@ -48,7 +48,11 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex flex-1 flex-col md:flex-row">
-      <Sidebar role={role} pathname={pathname} />
+      {/* `pathname` above is still used for the owner-only-route redirect
+          check — it's deliberately NOT passed to Sidebar for highlighting
+          the active link; see the comment on Sidebar's own `usePathname`
+          call for why a server-sourced pathname goes stale there. */}
+      <Sidebar role={role} />
       <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
     </div>
   );
