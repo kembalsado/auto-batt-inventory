@@ -33,6 +33,9 @@ export interface AuditLogFilters {
   itemId?: string;
   actorId?: string;
   action?: string;
+  /** Case-insensitive substring match against `summary`, server-side (`ilike`) rather than
+   * fetched-then-filtered, since this table is append-only and can grow unbounded. */
+  q?: string;
 }
 
 /**
@@ -106,6 +109,9 @@ export async function listAuditLog(
   }
   if (filters.action) {
     query = query.eq("action", filters.action);
+  }
+  if (filters.q) {
+    query = query.ilike("summary", `%${filters.q}%`);
   }
 
   const { data, error } = await query;

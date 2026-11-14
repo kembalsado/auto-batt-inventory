@@ -32,6 +32,7 @@ const runId = randomUUID().slice(0, 8);
 let OWNER_ID: string;
 let ASSISTANT_ID: string;
 let itemId: string;
+let itemSku: string;
 let ownerClient: SupabaseClient;
 let assistantClient: SupabaseClient;
 
@@ -73,6 +74,7 @@ beforeAll(async () => {
   });
   createdItemIds.push(item.id);
   itemId = item.id;
+  itemSku = item.sku;
 
   ownerClient = createAnonClient();
   const { error: ownerSignInError } = await ownerClient.auth.signInWithPassword({
@@ -187,6 +189,27 @@ test("listAuditLog filters by action", async () => {
   const entries = await listAuditLog(ownerClient, { action: "category.created" });
   expect(entries.length).toBeGreaterThan(0);
   expect(entries.every((e) => e.action === "category.created")).toBe(true);
+});
+
+test("listAuditLog filters by q, a case-insensitive summary substring match", async () => {
+  // createItem (lib/items.ts) writes its audit row with
+  // summary: `Created item ${sku}` — matching on a lowercased fragment
+  // of the item's own SKU exercises both the substring match and the
+  // case-insensitivity in one go.
+  const entries = await listAuditLog(ownerClient, {
+    itemId,
+    q: itemSku.toLowerCase(),
+  });
+  expect(entries.length).toBeGreaterThan(0);
+  expect(
+    entries.every((e) => e.summary.toLowerCase().includes(itemSku.toLowerCase()))
+  ).toBe(true);
+
+  const noMatches = await listAuditLog(ownerClient, {
+    itemId,
+    q: "this text matches nothing",
+  });
+  expect(noMatches).toEqual([]);
 });
 
 test("listAuditLog returns empty for an assistant caller (RLS-enforced)", async () => {

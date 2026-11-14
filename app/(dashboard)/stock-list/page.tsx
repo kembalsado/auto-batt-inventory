@@ -4,13 +4,7 @@ import { getSettings } from "@/lib/settings";
 import { buildStockListRows } from "@/lib/stock-list";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "./print-button";
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+import { StockListTable } from "./stock-list-table";
 
 /**
  * Stock list: one row per active item (sku, name, category, qty on hand,
@@ -45,7 +39,6 @@ export default async function StockListPage() {
     getSettings(supabase),
   ]);
   const showCost = canSeeCost(role, settings);
-  const columnCount = showCost ? 7 : 5;
 
   return (
     <div>
@@ -71,93 +64,7 @@ export default async function StockListPage() {
         </div>
       </div>
 
-      {/* Table at md and up; a card list below that for phone width —
-          same split as the Items list, same reason (a 7-column table
-          doesn't fit a phone). Print output always uses the table (the
-          print stylesheet only hides the sidebar/action bar, not this),
-          since a printed page has the table's full width available
-          regardless of screen size. */}
-      <table className="mt-6 hidden w-full text-left text-sm md:table print:table">
-        <thead>
-          <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 font-medium">SKU</th>
-            <th className="py-2 font-medium">Name</th>
-            <th className="py-2 font-medium">Category</th>
-            <th className="py-2 font-medium">Qty on hand</th>
-            <th className="py-2 font-medium">Unit</th>
-            {showCost && <th className="py-2 font-medium">Unit cost</th>}
-            {showCost && (
-              <th className="py-2 font-medium">Inventory value</th>
-            )}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.map((row) => (
-            <tr key={row.sku} className="text-brand-ink transition-colors hover:bg-muted/40 print:hover:bg-transparent">
-              <td className="py-2">{row.sku}</td>
-              <td className="py-2">{row.name}</td>
-              <td className="py-2">{row.category}</td>
-              <td className="py-2">{row.qtyOnHand}</td>
-              <td className="py-2">{row.unit}</td>
-              {showCost && (
-                <td className="py-2">
-                  {row.unitCost !== undefined
-                    ? formatCurrency(row.unitCost)
-                    : ""}
-                </td>
-              )}
-              {showCost && (
-                <td className="py-2">
-                  {row.inventoryValue !== undefined
-                    ? formatCurrency(row.inventoryValue)
-                    : ""}
-                </td>
-              )}
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td
-                colSpan={columnCount}
-                className="py-2 text-sm text-muted-foreground"
-              >
-                No active items.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div className="mt-4 flex flex-col gap-2 md:hidden print:hidden">
-        {rows.length === 0 && (
-          <p className="text-sm text-muted-foreground">No active items.</p>
-        )}
-        {rows.map((row) => (
-          <div key={row.sku} className="rounded-lg border border-border bg-card p-3">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-brand-ink">{row.name}</span>
-              <span className="text-xs text-muted-foreground">{row.sku}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{row.category}</span>
-              <span className="text-brand-ink">
-                {row.qtyOnHand} {row.unit}
-              </span>
-            </div>
-            {showCost && row.unitCost !== undefined && (
-              <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
-                <span>Unit cost: {formatCurrency(row.unitCost)}</span>
-                <span>
-                  Value:{" "}
-                  {row.inventoryValue !== undefined
-                    ? formatCurrency(row.inventoryValue)
-                    : ""}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <StockListTable rows={rows} showCost={showCost} />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 /** One row as rendered by this list — just what the table needs. */
 export interface MovementRow {
@@ -36,6 +38,18 @@ export function MovementsList({
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+
+  const filteredMovements = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return movements;
+    return movements.filter(
+      (m) =>
+        m.movementDate.toLowerCase().includes(normalized) ||
+        m.type.toLowerCase().includes(normalized) ||
+        (m.note ?? "").toLowerCase().includes(normalized)
+    );
+  }, [movements, query]);
 
   function handleVoid(movementId: string) {
     if (
@@ -90,6 +104,21 @@ export function MovementsList({
     <div className="mt-6">
       <h2 className="text-lg font-medium text-brand-ink">Movement history</h2>
 
+      <div className="relative mt-2 max-w-sm">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by date, type, or note"
+          aria-label="Search movement history"
+          className="h-9 pl-8 text-sm"
+        />
+      </div>
+
       <table className="mt-2 hidden w-full max-w-2xl text-sm md:table">
         <thead>
           <tr className="text-left text-muted-foreground">
@@ -102,7 +131,14 @@ export function MovementsList({
           </tr>
         </thead>
         <tbody>
-          {movements.map((m) => {
+          {filteredMovements.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-1 text-sm text-muted-foreground">
+                No movements match your search.
+              </td>
+            </tr>
+          )}
+          {filteredMovements.map((m) => {
             const voided = m.voidedAt != null;
             return (
               <tr
@@ -128,7 +164,10 @@ export function MovementsList({
       </table>
 
       <div className="mt-2 flex flex-col gap-2 md:hidden">
-        {movements.map((m) => {
+        {filteredMovements.length === 0 && (
+          <p className="text-sm text-muted-foreground">No movements match your search.</p>
+        )}
+        {filteredMovements.map((m) => {
           const voided = m.voidedAt != null;
           return (
             <div

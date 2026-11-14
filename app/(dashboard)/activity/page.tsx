@@ -65,13 +65,18 @@ function actorLabel(
 export default async function ActivityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ itemId?: string; actorId?: string; action?: string }>;
+  searchParams: Promise<{
+    itemId?: string;
+    actorId?: string;
+    action?: string;
+    q?: string;
+  }>;
 }) {
-  const { itemId, actorId, action } = await searchParams;
+  const { itemId, actorId, action, q } = await searchParams;
   const supabase = await createServerClient();
 
   const [entries, items, profilesResult] = await Promise.all([
-    listAuditLog(supabase, { itemId, actorId, action }),
+    listAuditLog(supabase, { itemId, actorId, action, q }),
     listItems(supabase),
     supabase.from("profiles").select("id, full_name").order("full_name"),
   ]);
@@ -87,13 +92,24 @@ export default async function ActivityPage({
     profiles.map((profile) => [profile.id, profile.full_name])
   );
 
-  const hasFilters = Boolean(itemId || actorId || action);
+  const hasFilters = Boolean(itemId || actorId || action || q);
 
   return (
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Activity</h1>
 
       <form className="mt-6 flex flex-wrap items-end gap-3" method="get">
+        <label className="flex flex-col gap-1 text-sm text-brand-ink">
+          Search
+          <input
+            type="search"
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="Search summary"
+            className="h-11 w-56 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+        </label>
+
         <label className="flex flex-col gap-1 text-sm text-brand-ink">
           Item
           <select

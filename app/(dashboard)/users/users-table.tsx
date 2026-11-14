@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import type { UserListItem } from "@/lib/users";
 
 /**
@@ -29,6 +31,18 @@ export function UsersTable({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [errorById, setErrorById] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+
+  const filteredUsers = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return users;
+    return users.filter(
+      (u) =>
+        (u.fullName ?? "").toLowerCase().includes(normalized) ||
+        u.email.toLowerCase().includes(normalized) ||
+        u.role.toLowerCase().includes(normalized)
+    );
+  }, [users, query]);
 
   async function toggleActive(targetUser: UserListItem) {
     const nextIsActive = !targetUser.isActive;
@@ -73,6 +87,21 @@ export function UsersTable({
     <div className="mt-10">
       <h2 className="text-lg font-medium text-brand-ink">All users</h2>
 
+      <div className="relative mt-4 max-w-sm">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by name, email, or role"
+          aria-label="Search users"
+          className="h-11 pl-8"
+        />
+      </div>
+
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
@@ -85,7 +114,7 @@ export function UsersTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {users.map((u) => {
+            {filteredUsers.map((u) => {
               const isSelf = u.id === currentUserId;
               const isPending = pendingId === u.id;
               return (
@@ -126,10 +155,10 @@ export function UsersTable({
                 </tr>
               );
             })}
-            {users.length === 0 && (
+            {filteredUsers.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-2 text-sm text-muted-foreground">
-                  No users yet.
+                  {users.length === 0 ? "No users yet." : "No users match your search."}
                 </td>
               </tr>
             )}
