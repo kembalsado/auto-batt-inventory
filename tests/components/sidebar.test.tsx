@@ -56,3 +56,12 @@ test("both roles see a Reports link", () => {
   render(<Sidebar role="assistant" />);
   expect(screen.getByText("Reports")).toBeInTheDocument();
 });
+
+test("both roles see a Makes link", () => {
+  mockPathname = "/";
+  const { unmount } = render(<Sidebar role="owner" />);
+  expect(screen.getByText("Makes")).toBeInTheDocument();
+  unmount();
+  render(<Sidebar role="assistant" />);
+  expect(screen.getByText("Makes")).toBeInTheDocument();
+});
