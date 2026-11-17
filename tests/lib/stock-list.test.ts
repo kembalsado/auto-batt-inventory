@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
+import { createCarMake } from "@/lib/car-makes";
 import { createItem } from "@/lib/items";
 import { recordStockIn } from "@/lib/movements";
 import { getSettings, updateSettings, type AppSettings } from "@/lib/settings";
@@ -35,6 +36,7 @@ let categoryId: string;
 let itemWithStockId: string;
 let itemNoStockId: string;
 const createdItemIds: string[] = [];
+const createdMakeIds: string[] = [];
 
 const runId = randomUUID().slice(0, 8);
 const skuPrefix = `AB-SL-${runId}`;
@@ -142,6 +144,7 @@ afterAll(async () => {
     await admin.from("batches").delete().in("id", batchIds);
   }
   await admin.from("items").delete().in("id", createdItemIds);
+  await admin.from("car_makes").delete().in("id", createdMakeIds);
   await admin.from("categories").delete().eq("id", categoryId);
   await admin.from("audit_log").delete().in("actor_id", [OWNER_ID, ASSISTANT_ID]);
   await admin.from("profiles").delete().in("id", [OWNER_ID, ASSISTANT_ID]);
@@ -306,4 +309,43 @@ test("rows carry the item's category name and unit", async () => {
   expect(row?.category).toBe(`Batteries-SL-${runId}`);
   expect(row?.unit).toBe("pcs");
   expect(row?.name).toBe("12V Battery");
+});
+
+test("buildStockListRows computes a joined vehicle string when all fields are set", async () => {
+  const admin = createAdminClient();
+  const make = await createCarMake(admin, OWNER_ID, `StockListTest-Make-${runId}`);
+  createdMakeIds.push(make.id);
+  const item = await createItem(admin, OWNER_ID, {
+    sku: `${skuPrefix}-VEH`, name: "Vehicle item", categoryId, unit: "pcs",
+    makeId: make.id, model: "Vios", variant: "1.3 E CVT", year: 2017,
+  });
+  createdItemIds.push(item.id);
+  const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
+  const row = rows.find((r) => r.id === item.id);
+  expect(row?.vehicle).toBe(`${make.name} Vios 1.3 E CVT 2017`);
+});
+
+test("buildStockListRows joins only the vehicle fields that are set, with no stray spaces", async () => {
+  const admin = createAdminClient();
+  const make = await createCarMake(admin, OWNER_ID, `StockListTest-Make2-${runId}`);
+  createdMakeIds.push(make.id);
+  const item = await createItem(admin, OWNER_ID, {
+    sku: `${skuPrefix}-PARTIAL`, name: "Partial vehicle item", categoryId, unit: "pcs",
+    makeId: make.id,
+  });
+  createdItemIds.push(item.id);
+  const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
+  const row = rows.find((r) => r.id === item.id);
+  expect(row?.vehicle).toBe(make.name);
+});
+
+test("buildStockListRows falls back to an em dash when no vehicle fields are set", async () => {
+  const admin = createAdminClient();
+  const item = await createItem(admin, OWNER_ID, {
+    sku: `${skuPrefix}-NOVEH`, name: "No vehicle item", categoryId, unit: "pcs",
+  });
+  createdItemIds.push(item.id);
+  const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
+  const row = rows.find((r) => r.id === item.id);
+  expect(row?.vehicle).toBe("—");
 });

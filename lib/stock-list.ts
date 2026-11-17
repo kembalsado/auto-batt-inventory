@@ -34,6 +34,12 @@ export interface StockListRow {
   isLowStock: boolean;
   /** `items.is_active`. Only ever false when `includeInactive` was set. */
   isActive: boolean;
+  /**
+   * Make/model/variant/year joined with a single space, skipping whichever
+   * of those are unset — "—" when none are set at all. Never cost-gated;
+   * present on every row regardless of viewer role.
+   */
+  vehicle: string;
   unitCost?: number;
   inventoryValue?: number;
 }
@@ -63,6 +69,10 @@ interface ItemWithCategoryRow {
   low_stock_threshold: number | null;
   is_active: boolean;
   categories: { name: string } | null;
+  model: string | null;
+  variant: string | null;
+  year: number | null;
+  car_makes: { name: string } | null;
 }
 
 /** Row shape read from the bulk `batches_for_viewer` query below. */
@@ -121,7 +131,7 @@ export async function buildStockListRows(
   let itemsQuery = supabase
     .from("items")
     .select(
-      "id, sku, name, unit, low_stock_threshold, is_active, categories(name)"
+      "id, sku, name, unit, low_stock_threshold, is_active, categories(name), model, variant, year, car_makes(name)"
     )
     .order("name");
 
@@ -185,6 +195,10 @@ export async function buildStockListRows(
         settings.defaultLowStockThreshold
       ),
       isActive: item.is_active,
+      vehicle:
+        [item.car_makes?.name, item.model, item.variant, item.year]
+          .filter(Boolean)
+          .join(" ") || "—",
     };
 
     if (!showCost) {
