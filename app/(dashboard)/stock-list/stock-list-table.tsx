@@ -4,13 +4,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { StockListRow } from "@/lib/stock-list";
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+import { formatCurrency } from "@/lib/format";
 
 /**
  * Client-side search for the Stock List, same reasoning as the Items
