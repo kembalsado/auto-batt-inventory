@@ -8,6 +8,7 @@ import { manilaToday } from "@/lib/date";
 import { getDailyReport, getMonthlyReport, getAnnualReport } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
 import { ReportTable, type ReportTableRow } from "./report-table";
+import { PendingIcon, PendingLabel, PendingSubmitButton } from "./pending-indicators";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -197,16 +198,92 @@ export default async function ReportsPage({
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Reports</h1>
 
-      <div className="mt-4 inline-flex gap-1 rounded-lg bg-muted p-1">
-        <Link href={dayHref(tabDate)} className={tabClass(view === "day")}>
-          Day
-        </Link>
-        <Link href={monthHref(tabYear, tabMonth)} className={tabClass(view === "month")}>
-          Month
-        </Link>
-        <Link href={yearHref(tabYear)} className={tabClass(view === "year")}>
-          Year
-        </Link>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex gap-1 rounded-lg bg-muted p-1">
+          <Link href={dayHref(tabDate)} className={tabClass(view === "day")}>
+            <PendingLabel>Day</PendingLabel>
+          </Link>
+          <Link href={monthHref(tabYear, tabMonth)} className={tabClass(view === "month")}>
+            <PendingLabel>Month</PendingLabel>
+          </Link>
+          <Link href={yearHref(tabYear)} className={tabClass(view === "year")}>
+            <PendingLabel>Year</PendingLabel>
+          </Link>
+        </div>
+
+        {/* Jump straight to a date/month/year — plain GET forms, no client
+            JS for the navigation itself (PendingSubmitButton only reports
+            status; it doesn't drive the submit). Each form only carries its
+            own fields, so submitting always lands on a clean URL for that
+            view rather than inheriting stale params from whatever view the
+            viewer was on before. */}
+        {view === "day" && (
+          <form action="/reports" method="get" className="flex items-center gap-2">
+            <input type="hidden" name="view" value="day" />
+            <label className="sr-only" htmlFor="report-date">
+              Jump to date
+            </label>
+            <input
+              id="report-date"
+              type="date"
+              name="date"
+              defaultValue={date}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm text-brand-ink"
+            />
+            <PendingSubmitButton />
+          </form>
+        )}
+        {view === "month" && (
+          <form action="/reports" method="get" className="flex items-center gap-2">
+            <input type="hidden" name="view" value="month" />
+            <label className="sr-only" htmlFor="report-month">
+              Jump to month
+            </label>
+            <select
+              id="report-month"
+              name="month"
+              defaultValue={month}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm text-brand-ink"
+            >
+              {MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <label className="sr-only" htmlFor="report-month-year">
+              Jump to year
+            </label>
+            <input
+              id="report-month-year"
+              type="number"
+              name="year"
+              defaultValue={year}
+              min={2000}
+              max={2100}
+              className="h-9 w-20 rounded-md border border-border bg-background px-2 text-sm text-brand-ink"
+            />
+            <PendingSubmitButton />
+          </form>
+        )}
+        {view === "year" && (
+          <form action="/reports" method="get" className="flex items-center gap-2">
+            <input type="hidden" name="view" value="year" />
+            <label className="sr-only" htmlFor="report-year">
+              Jump to year
+            </label>
+            <input
+              id="report-year"
+              type="number"
+              name="year"
+              defaultValue={year}
+              min={2000}
+              max={2100}
+              className="h-9 w-24 rounded-md border border-border bg-background px-2 text-sm text-brand-ink"
+            />
+            <PendingSubmitButton />
+          </form>
+        )}
       </div>
 
       <div className="mt-6 max-w-3xl overflow-hidden rounded-xl border border-border shadow-sm">
@@ -216,7 +293,9 @@ export default async function ReportsPage({
             aria-label={prevLabel}
             className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
           >
-            <ChevronLeft className="size-4" aria-hidden="true" />
+            <PendingIcon className="size-4">
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </PendingIcon>
           </Link>
           <span className="text-base font-extrabold">{periodLabel}</span>
           <Link
@@ -224,7 +303,9 @@ export default async function ReportsPage({
             aria-label={nextLabel}
             className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
           >
-            <ChevronRight className="size-4" aria-hidden="true" />
+            <PendingIcon className="size-4">
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </PendingIcon>
           </Link>
         </div>
 
