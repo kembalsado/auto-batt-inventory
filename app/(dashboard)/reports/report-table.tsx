@@ -17,13 +17,24 @@ export interface ReportTableRow {
  * `isCurrent` rows are marked the same way Calendar marks "today"
  * (app/(dashboard)/calendar/page.tsx): `text-brand-green font-bold` on the
  * label cell.
+ *
+ * `labelHeader` names what `row.label` actually is for this table (e.g.
+ * "Day" for a Month view's day-by-day breakdown, "Month" for a Year
+ * view's month-by-month one) — the caller decides, since this component
+ * has no way to know on its own.
  */
-export function ReportTable({ rows }: { rows: ReportTableRow[] }) {
+export function ReportTable({
+  rows,
+  labelHeader,
+}: {
+  rows: ReportTableRow[];
+  labelHeader: string;
+}) {
   return (
     <table className="mt-6 w-full text-left text-sm">
       <thead>
         <tr className="border-b border-border text-muted-foreground">
-          <th className="py-2 font-medium">Label</th>
+          <th className="py-2 font-medium">{labelHeader}</th>
           <th className="py-2 font-medium">Purchases</th>
           <th className="py-2 font-medium">Stock-out value</th>
         </tr>

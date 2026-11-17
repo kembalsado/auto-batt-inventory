@@ -153,7 +153,8 @@ export default async function ReportsPage({
     const report = await getDailyReport(supabase, adminSupabase, date);
     purchases = report.purchases;
     stockOutValue = report.stockOutValue;
-    periodLabel = date;
+    const [dateYear, dateMonth, dateDay] = date.split("-").map(Number);
+    periodLabel = `${MONTH_NAMES[dateMonth - 1]} ${dateDay}, ${dateYear}`;
     prevHref = dayHref(shiftDay(date, -1));
     nextHref = dayHref(shiftDay(date, 1));
     prevLabel = "Previous day";
@@ -246,7 +247,10 @@ export default async function ReportsPage({
 
         {view !== "day" && (
           <div className="bg-card px-4 pb-2">
-            <ReportTable rows={tableRows} />
+            <ReportTable
+              rows={tableRows}
+              labelHeader={view === "month" ? "Day" : "Month"}
+            />
           </div>
         )}
       </div>
