@@ -46,3 +46,13 @@ test("both roles see a sign out control", () => {
   render(<Sidebar role="assistant" />);
   expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
 });
+
+test("both roles see a Reports link", () => {
+  mockPathname = "/";
+  const { unmount } = render(<Sidebar role="owner" />);
+  expect(screen.getByText("Reports")).toBeInTheDocument();
+  unmount();
+
+  render(<Sidebar role="assistant" />);
+  expect(screen.getByText("Reports")).toBeInTheDocument();
+});

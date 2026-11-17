@@ -10,6 +10,7 @@ import {
   Tags,
   ClipboardList,
   CalendarDays,
+  BarChart3,
   Upload,
   Users,
   History,
@@ -36,6 +37,7 @@ const SHARED_LINKS: NavLink[] = [
   { href: "/categories", label: "Categories", icon: Tags },
   { href: "/stock-list", label: "Stock List", icon: ClipboardList },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/import", label: "Import", icon: Upload },
 ];
 

@@ -16,7 +16,7 @@ interface MovementRow {
 }
 
 /** "YYYY-MM-DD" for the first day of `year`-`month` (`month` is 1-12). */
-function firstDayOfMonth(year: number, month: number): string {
+export function firstDayOfMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
@@ -28,7 +28,7 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /** "YYYY-MM-DD" for the last day of `year`-`month` (`month` is 1-12). */
-function lastDayOfMonth(year: number, month: number): string {
+export function lastDayOfMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth(year, month)).padStart(2, "0")}`;
 }
 

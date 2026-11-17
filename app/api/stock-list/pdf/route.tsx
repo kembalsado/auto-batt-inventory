@@ -2,6 +2,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { getRole, canSeeCost } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { buildStockListRows, type StockListRow } from "@/lib/stock-list";
+import { formatCurrency } from "@/lib/format";
 import {
   Document,
   Page,
@@ -52,13 +53,6 @@ const styles = StyleSheet.create({
   cell: { flex: 1 },
   cellRight: { flex: 1, textAlign: "right" },
 });
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
 
 /**
  * The PDF document tree for the stock list. `showCost` gates the Unit

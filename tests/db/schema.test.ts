@@ -8,3 +8,9 @@ test("app_settings has exactly one seeded row", async () => {
   expect(data).toHaveLength(1);
   expect(data![0].show_cost_to_assistant).toBe(false);
 });
+
+test("service_role can select from movement_allocations", async () => {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("movement_allocations").select("*").limit(1);
+  expect(error).toBeNull();
+});

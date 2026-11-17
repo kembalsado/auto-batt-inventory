@@ -1,0 +1,29 @@
+-- Auto Batt Inventory — grant service_role SELECT on movement_allocations
+--
+-- Task 2 (getStockOutValueByDate in lib/reports.ts) will compute cost totals
+-- for a new Reports page by reading allocation cost data directly through the
+-- service-role admin client. That path is the first real caller of this table
+-- outside the SECURITY DEFINER functions that wrote it.
+--
+-- 0011's movement_allocations_lockdown revoked SELECT from anon and
+-- authenticated to prevent cost leakage, then explicitly left service_role's
+-- grant untouched — the comment noted "The service_role client (tests' cleanup,
+-- any future admin path) keeps its own grant... " But looking at the actual
+-- SQL executed, 0011 only revoked from anon/authenticated, it didn't
+-- grant/revoke for service_role at all, leaving the initial schema's grants in
+-- place for service_role.
+--
+-- 0014's service_role_base_grants explicitly excluded movement_allocations
+-- from that migration's scope, documenting: "movement_allocations — excluded
+-- here for the same reason 0013 excluded it: 0011 revoked SELECT entirely...
+-- since the only real callers are SECURITY DEFINER functions that read/write
+-- it as the function owner, service_role included." This was true when 0014
+-- was written — there was no real service-role read path to the table.
+--
+-- Now there is. This migration grants SELECT to service_role. No RLS policy
+-- is restored: 0011 dropped the row-level policy intentionally (Postgres
+-- evaluates base table privileges before RLS anyway, and service_role
+-- bypasses RLS entirely regardless). The only safety here is the
+-- application-level canSeeCost check in app/(dashboard)/reports/page.tsx
+-- (Task 6) running before this table is ever touched in the reports flow.
+grant select on movement_allocations to service_role;
