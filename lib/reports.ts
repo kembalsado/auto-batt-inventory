@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { daysInMonth, firstDayOfMonth, lastDayOfMonth } from "@/lib/calendar";
 
 /** Row shape read from the bulk `stock_movements` IN query below. */
 interface PurchaseMovementRow {
@@ -186,4 +187,168 @@ export async function getStockOutValueByDate(
   }
 
   return totalsByDate;
+}
+
+/** Shared Purchases/Stock-out-value pair every report shape rolls up from. */
+export interface AmountTotals {
+  purchases: number;
+  stockOutValue: number;
+}
+
+/** One calendar day's totals. */
+export interface DailyReport extends AmountTotals {
+  /** "YYYY-MM-DD" */
+  date: string;
+}
+
+/**
+ * A whole month's totals, plus a zero-filled, in-order, one-entry-per-day
+ * breakdown (`days.length === daysInMonth(year, month)` always — never
+ * sparse, so a page rendering a day-by-day table can index straight into
+ * it without a "day N has no entry" fallback).
+ */
+export interface MonthlyReport extends AmountTotals {
+  year: number;
+  /** 1-12 */
+  month: number;
+  days: (AmountTotals & { date: string })[];
+}
+
+/**
+ * A whole year's totals, plus a zero-filled, in-order, one-entry-per-month
+ * breakdown (`months.length === 12` always, `months[i].month === i + 1`).
+ */
+export interface AnnualReport extends AmountTotals {
+  year: number;
+  months: (AmountTotals & { month: number })[];
+}
+
+/** "MM" / "DD" zero-padded to two digits, matching lib/calendar.ts's own
+ * inline `padStart(2, "0")` convention for building "YYYY-MM-DD" strings. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * One date's Purchases + Stock-out-value totals. Thin composition over
+ * `getPurchasesByDate`/`getStockOutValueByDate` with both ends of the
+ * range pinned to the same single day, run in parallel since neither
+ * depends on the other's result.
+ *
+ * `supabase` must be a client with a real signed-in session (see
+ * `getPurchasesByDate`'s docstring) — `adminSupabase` must be the
+ * service-role client (see `getStockOutValueByDate`'s docstring). Passing
+ * the wrong one to the wrong parameter silently zeroes out the
+ * corresponding total rather than throwing, same as the functions it
+ * composes.
+ */
+export async function getDailyReport(
+  supabase: SupabaseClient,
+  adminSupabase: SupabaseClient,
+  date: string
+): Promise<DailyReport> {
+  const [purchasesByDate, stockOutValueByDate] = await Promise.all([
+    getPurchasesByDate(supabase, date, date),
+    getStockOutValueByDate(adminSupabase, date, date),
+  ]);
+
+  return {
+    date,
+    purchases: purchasesByDate.get(date) ?? 0,
+    stockOutValue: stockOutValueByDate.get(date) ?? 0,
+  };
+}
+
+/**
+ * A whole month's Purchases + Stock-out-value totals, plus a day-by-day
+ * breakdown covering every calendar day in `year`-`month` (via
+ * `lib/calendar.ts`'s `firstDayOfMonth`/`lastDayOfMonth`/`daysInMonth` —
+ * reused rather than re-derived so this stays correct for leap-year
+ * Februaries the same way the existing calendar grid does).
+ *
+ * Both range queries run once each, over the whole month, in parallel —
+ * not one query per day — then get read back per day with `?? 0`, the
+ * same sparse-map convention `getPurchasesByDate`/`getStockOutValueByDate`
+ * already use. The month's totals are the sum of the zero-filled `days`
+ * array, so they always agree with it by construction.
+ */
+export async function getMonthlyReport(
+  supabase: SupabaseClient,
+  adminSupabase: SupabaseClient,
+  year: number,
+  month: number
+): Promise<MonthlyReport> {
+  const startDate = firstDayOfMonth(year, month);
+  const endDate = lastDayOfMonth(year, month);
+
+  const [purchasesByDate, stockOutValueByDate] = await Promise.all([
+    getPurchasesByDate(supabase, startDate, endDate),
+    getStockOutValueByDate(adminSupabase, startDate, endDate),
+  ]);
+
+  const days: (AmountTotals & { date: string })[] = [];
+  let purchases = 0;
+  let stockOutValue = 0;
+  const totalDays = daysInMonth(year, month);
+  for (let day = 1; day <= totalDays; day++) {
+    const date = `${year}-${pad2(month)}-${pad2(day)}`;
+    const dayPurchases = purchasesByDate.get(date) ?? 0;
+    const dayStockOutValue = stockOutValueByDate.get(date) ?? 0;
+    days.push({ date, purchases: dayPurchases, stockOutValue: dayStockOutValue });
+    purchases += dayPurchases;
+    stockOutValue += dayStockOutValue;
+  }
+
+  return { year, month, days, purchases, stockOutValue };
+}
+
+/**
+ * A whole year's Purchases + Stock-out-value totals, plus a
+ * month-by-month breakdown (`months[0]` is January, `months[11]` is
+ * December — `months[i].month === i + 1`).
+ *
+ * Both range queries run once each, over the whole year
+ * (`${year}-01-01`..`${year}-12-31`), in parallel. Every date key the two
+ * maps return is bucketed into its month by comparing characters 5-6 of
+ * the "YYYY-MM-DD" key (the zero-padded "MM") against the loop's own
+ * zero-padded month — plain string slicing, not a `Date` object, per the
+ * project's existing calendar-date convention (see `lib/date.ts`,
+ * `lib/calendar.ts`).
+ */
+export async function getAnnualReport(
+  supabase: SupabaseClient,
+  adminSupabase: SupabaseClient,
+  year: number
+): Promise<AnnualReport> {
+  const startDate = `${year}-01-01`;
+  const endDate = `${year}-12-31`;
+
+  const [purchasesByDate, stockOutValueByDate] = await Promise.all([
+    getPurchasesByDate(supabase, startDate, endDate),
+    getStockOutValueByDate(adminSupabase, startDate, endDate),
+  ]);
+
+  const months: (AmountTotals & { month: number })[] = [];
+  let purchases = 0;
+  let stockOutValue = 0;
+  for (let month = 1; month <= 12; month++) {
+    const monthKey = pad2(month);
+    let monthPurchases = 0;
+    for (const [date, amount] of purchasesByDate) {
+      if (date.slice(5, 7) === monthKey) {
+        monthPurchases += amount;
+      }
+    }
+    let monthStockOutValue = 0;
+    for (const [date, amount] of stockOutValueByDate) {
+      if (date.slice(5, 7) === monthKey) {
+        monthStockOutValue += amount;
+      }
+    }
+    months.push({ month, purchases: monthPurchases, stockOutValue: monthStockOutValue });
+    purchases += monthPurchases;
+    stockOutValue += monthStockOutValue;
+  }
+
+  return { year, months, purchases, stockOutValue };
 }

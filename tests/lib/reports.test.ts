@@ -4,7 +4,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createItem } from "@/lib/items";
 import { createCategory } from "@/lib/categories";
 import { recordStockIn, recordStockOut, voidMovement } from "@/lib/movements";
-import { getPurchasesByDate, getStockOutValueByDate } from "@/lib/reports";
+import {
+  getPurchasesByDate,
+  getStockOutValueByDate,
+  getDailyReport,
+  getMonthlyReport,
+  getAnnualReport,
+} from "@/lib/reports";
 
 // Plain anon-key client used to sign in as a real user and exercise RLS /
 // batches_for_viewer's auth.uid()-based cost gate, as opposed to `admin`
@@ -246,5 +252,106 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
     const stockOut = await getStockOutValueByDate(admin, "2099-01-01", "2099-01-31");
     expect(purchases.size).toBe(0);
     expect(stockOut.size).toBe(0);
+  });
+
+  describe("getDailyReport / getMonthlyReport / getAnnualReport", () => {
+    // Each test below uses a dedicated item on dates no other test in this
+    // file (or Task 2's queries, which scan stock_movements/
+    // movement_allocations globally, not per-owner) touches — 2026-06,
+    // 2026-07, and 2027 are otherwise untouched by the fixtures above
+    // (which live in 2026-10 and 2026-11), so FIFO allocation and date
+    // bucketing can't pick up stray data from earlier tests in this file.
+    async function makeCompositionItem(label: string) {
+      const runId = randomUUID().slice(0, 8);
+      const category = await createCategory(admin, OWNER_ID, `Reports-${label}-${runId}`);
+      createdCategoryIds.push(category.id);
+      const item = await createItem(admin, OWNER_ID, {
+        sku: `RPT-${label}-${runId}`,
+        name: `Reports Composition Item ${label}`,
+        categoryId: category.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(item.id);
+      return item.id;
+    }
+
+    test("getDailyReport returns one date's totals", async () => {
+      const compositionItemId = await makeCompositionItem("daily");
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: compositionItemId,
+        qty: 10,
+        unitCost: 100,
+        batchDate: "2026-06-10",
+      });
+      await recordStockOut(admin, OWNER_ID, {
+        itemId: compositionItemId,
+        qty: 4,
+        movementDate: "2026-06-10",
+      });
+
+      const report = await getDailyReport(ownerClient, admin, "2026-06-10");
+      expect(report).toEqual({ date: "2026-06-10", purchases: 1000, stockOutValue: 400 });
+    });
+
+    test("getMonthlyReport rolls up every day of the month, zero-filled", async () => {
+      const compositionItemId = await makeCompositionItem("monthly");
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: compositionItemId,
+        qty: 10,
+        unitCost: 100,
+        batchDate: "2026-07-12",
+      });
+
+      const report = await getMonthlyReport(ownerClient, admin, 2026, 7);
+      expect(report.days).toHaveLength(31);
+      expect(report.days.find((d) => d.date === "2026-07-01")).toEqual({
+        date: "2026-07-01",
+        purchases: 0,
+        stockOutValue: 0,
+      });
+      expect(report.days.find((d) => d.date === "2026-07-12")).toEqual({
+        date: "2026-07-12",
+        purchases: 1000,
+        stockOutValue: 0,
+      });
+      expect(report.purchases).toBe(1000);
+      expect(report.stockOutValue).toBe(0);
+    });
+
+    test("getAnnualReport buckets the year's first and last day into the right months, and nothing outside 12 entries", async () => {
+      const compositionItemId = await makeCompositionItem("annual");
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: compositionItemId,
+        qty: 1,
+        unitCost: 10,
+        batchDate: "2027-01-01",
+      });
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: compositionItemId,
+        qty: 2,
+        unitCost: 20,
+        batchDate: "2027-12-31",
+      });
+
+      const report = await getAnnualReport(ownerClient, admin, 2027);
+      expect(report.months).toHaveLength(12);
+      expect(report.months[0]).toMatchObject({ month: 1, purchases: 10 });
+      expect(report.months[11]).toMatchObject({ month: 12, purchases: 40 });
+      expect(report.purchases).toBe(50);
+    });
+
+    test("getMonthlyReport handles a leap-year February with 29 days", async () => {
+      const report = await getMonthlyReport(ownerClient, admin, 2028, 2);
+      expect(report.days).toHaveLength(29);
+      expect(report.days[0].date).toBe("2028-02-01");
+      expect(report.days[28].date).toBe("2028-02-29");
+    });
+
+    test("an empty period returns real zeros, not undefined or an error", async () => {
+      const report = await getMonthlyReport(ownerClient, admin, 2099, 1);
+      expect(report.purchases).toBe(0);
+      expect(report.stockOutValue).toBe(0);
+      expect(report.days.every((d) => d.purchases === 0 && d.stockOutValue === 0)).toBe(true);
+    });
   });
 });
