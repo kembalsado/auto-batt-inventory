@@ -214,6 +214,50 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
       const result = await getPurchasesByDate(ownerClient, "2026-11-01", "2026-11-30");
       expect(result.has("2026-11-25")).toBe(false);
     });
+
+    test(
+      "chunks/pages the batches_for_viewer lookup so more than one chunk's worth of batches still sums correctly (Finding 1 regression)",
+      async () => {
+        // Forces getPurchasesByDate's batches_for_viewer lookup through
+        // more than one internal chunk (lib/reports.ts's CHUNK_SIZE = 150):
+        // 170 distinct batches on the same item/date means 170 distinct
+        // batch_ids collected from the movements step, split into two
+        // `.in(...)` chunks (150 + 20) by `fetchAllForIds`. This doesn't
+        // reach PostgREST's real HTTP-414 threshold (~216 ids) or its
+        // 1000-row cap — it doesn't need to — it proves the chunking/
+        // paging loop itself correctly merges every chunk's rows instead
+        // of silently dropping any of them, which is the actual
+        // regression Finding 1 of the branch-wide review called out.
+        const runId = randomUUID().slice(0, 8);
+        const category = await createCategory(admin, OWNER_ID, `Reports-Chunk-${runId}`);
+        createdCategoryIds.push(category.id);
+        const chunkItem = await createItem(admin, OWNER_ID, {
+          sku: `RPT-CHUNK-${runId}`,
+          name: "Reports Chunking Test Item",
+          categoryId: category.id,
+          unit: "pcs",
+        });
+        createdItemIds.push(chunkItem.id);
+
+        const BATCH_COUNT = 170;
+        const batchDate = "2026-08-15";
+        for (let i = 0; i < BATCH_COUNT; i++) {
+          await recordStockIn(admin, OWNER_ID, {
+            itemId: chunkItem.id,
+            qty: 1,
+            unitCost: 1,
+            batchDate,
+          });
+        }
+
+        const result = await getPurchasesByDate(ownerClient, "2026-08-01", "2026-08-31");
+        // Each batch contributes 1*1 = 1; a dropped chunk (e.g. only the
+        // first 150) would under-report this total rather than error, the
+        // same silent-truncation shape as the real bug.
+        expect(result.get(batchDate)).toBe(BATCH_COUNT);
+      },
+      60000
+    );
   });
 
   describe("getStockOutValueByDate", () => {

@@ -1,6 +1,82 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { daysInMonth, firstDayOfMonth, lastDayOfMonth } from "@/lib/calendar";
 
+// PostgREST's hard per-request row cap (`max_rows`, supabase/config.toml).
+// Every bulk query in this file pages by this size — looping until a page
+// comes back shorter than it — so a date range or id-list chunk that
+// happens to exceed 1000 rows (easy for `movement_allocations` under
+// multi-batch FIFO draws) is never silently truncated.
+const PAGE_SIZE = 1000;
+
+// Splits a long `.in("id", [...])` id list into requests comfortably under
+// the URL length that produces an HTTP 414 on this project's own local
+// PostgREST (measured at ~216 UUIDs) — see Finding 1 of the branch-wide
+// review that introduced this constant.
+const CHUNK_SIZE = 150;
+
+/** Splits `items` into consecutive chunks of at most `size` elements each. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Runs `queryPage(offset)` repeatedly — paging by `PAGE_SIZE`, relying on
+ * the caller's query to `.order("id")` for a stable, non-overlapping
+ * cursor — until a page comes back with fewer than `PAGE_SIZE` rows,
+ * merging every page's rows into one array. Throws whatever error a page
+ * returns, same as every other query in this file.
+ */
+async function fetchAllPages<T>(
+  queryPage: (
+    offset: number
+  ) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await queryPage(offset);
+    if (error) {
+      throw error;
+    }
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
+  }
+  return rows;
+}
+
+/**
+ * Runs one `.in("id", chunk)`-style query per `CHUNK_SIZE`-sized slice of
+ * `ids` (keeping request URLs short enough to avoid PostgREST's 414), each
+ * slice itself paged via `fetchAllPages` (keeping any single slice's
+ * result set from being silently capped at 1000 rows), and merges every
+ * chunk's rows into one array. The shared shape both id-list bulk queries
+ * below (`batches_for_viewer`, `movement_allocations`) page through.
+ */
+async function fetchAllForIds<T>(
+  ids: string[],
+  queryPage: (
+    idChunk: string[],
+    offset: number
+  ) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (const idChunk of chunk(ids, CHUNK_SIZE)) {
+    const chunkRows = await fetchAllPages<T>((offset) =>
+      queryPage(idChunk, offset)
+    );
+    rows.push(...chunkRows);
+  }
+  return rows;
+}
+
 /** Row shape read from the bulk `stock_movements` IN query below. */
 interface PurchaseMovementRow {
   movement_date: string;
@@ -45,42 +121,51 @@ interface ViewerBatchLookupRow {
  * range — same sparse-map convention as `lib/calendar.ts`'s
  * `getMonthActivity`: a date only has an entry if it had at least one
  * qualifying movement.
+ *
+ * Both bulk reads below — the date-range `stock_movements` query and the
+ * `batches_for_viewer` lookup keyed by the distinct `batch_id`s collected
+ * from it — are paged via `fetchAllPages`/`fetchAllForIds` rather than
+ * read in one shot: at realistic volume a single date range (e.g. a full
+ * year) can exceed PostgREST's 1000-row cap, and a single `.in(...)` id
+ * list long enough can exceed the URL length PostgREST accepts (HTTP 414).
+ * See Finding 1 of the branch-wide review.
  */
 export async function getPurchasesByDate(
   supabase: SupabaseClient,
   startDate: string,
   endDate: string
 ): Promise<Map<string, number>> {
-  const { data: movements, error: movementsError } = await supabase
-    .from("stock_movements")
-    .select("movement_date, quantity, batch_id")
-    .eq("type", "IN")
-    .is("voided_at", null)
-    .gte("movement_date", startDate)
-    .lte("movement_date", endDate);
+  const movementRows = await fetchAllPages<PurchaseMovementRow>((offset) =>
+    supabase
+      .from("stock_movements")
+      .select("movement_date, quantity, batch_id")
+      .eq("type", "IN")
+      .is("voided_at", null)
+      .gte("movement_date", startDate)
+      .lte("movement_date", endDate)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+  );
 
-  if (movementsError) {
-    throw movementsError;
-  }
-
-  const movementRows = (movements ?? []) as PurchaseMovementRow[];
   if (movementRows.length === 0) {
     return new Map();
   }
 
   const batchIds = Array.from(new Set(movementRows.map((m) => m.batch_id)));
 
-  const { data: batches, error: batchesError } = await supabase
-    .from("batches_for_viewer")
-    .select("id, unit_cost, source")
-    .in("id", batchIds);
-
-  if (batchesError) {
-    throw batchesError;
-  }
+  const batchRows = await fetchAllForIds<ViewerBatchLookupRow>(
+    batchIds,
+    (idChunk, offset) =>
+      supabase
+        .from("batches_for_viewer")
+        .select("id, unit_cost, source")
+        .in("id", idChunk)
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+  );
 
   const batchById = new Map<string, ViewerBatchLookupRow>();
-  for (const batch of (batches ?? []) as ViewerBatchLookupRow[]) {
+  for (const batch of batchRows) {
     batchById.set(batch.id, batch);
   }
 
@@ -138,25 +223,31 @@ interface AllocationRow {
  * Returns an empty `Map` (never throws) when no OUT movement falls in
  * range — same sparse-map convention as `getPurchasesByDate` and
  * `lib/calendar.ts`'s `getMonthActivity`.
+ *
+ * Both bulk reads below are paged the same way as `getPurchasesByDate`'s
+ * (`fetchAllPages`/`fetchAllForIds`) — the `movement_allocations` lookup
+ * especially so, since multi-batch FIFO draws can put far more than 1000
+ * allocation rows behind even a modest-looking id chunk, and PostgREST
+ * would otherwise silently return only the first 1000 of them. See
+ * Finding 1 of the branch-wide review.
  */
 export async function getStockOutValueByDate(
   adminSupabase: SupabaseClient,
   startDate: string,
   endDate: string
 ): Promise<Map<string, number>> {
-  const { data: movements, error: movementsError } = await adminSupabase
-    .from("stock_movements")
-    .select("id, movement_date")
-    .eq("type", "OUT")
-    .is("voided_at", null)
-    .gte("movement_date", startDate)
-    .lte("movement_date", endDate);
+  const movementRows = await fetchAllPages<StockOutMovementRow>((offset) =>
+    adminSupabase
+      .from("stock_movements")
+      .select("id, movement_date")
+      .eq("type", "OUT")
+      .is("voided_at", null)
+      .gte("movement_date", startDate)
+      .lte("movement_date", endDate)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+  );
 
-  if (movementsError) {
-    throw movementsError;
-  }
-
-  const movementRows = (movements ?? []) as StockOutMovementRow[];
   if (movementRows.length === 0) {
     return new Map();
   }
@@ -167,17 +258,19 @@ export async function getStockOutValueByDate(
     dateByMovementId.set(movement.id, movement.movement_date);
   }
 
-  const { data: allocations, error: allocationsError } = await adminSupabase
-    .from("movement_allocations")
-    .select("movement_id, qty_allocated, unit_cost_at_allocation")
-    .in("movement_id", movementIds);
-
-  if (allocationsError) {
-    throw allocationsError;
-  }
+  const allocationRows = await fetchAllForIds<AllocationRow>(
+    movementIds,
+    (idChunk, offset) =>
+      adminSupabase
+        .from("movement_allocations")
+        .select("movement_id, qty_allocated, unit_cost_at_allocation")
+        .in("movement_id", idChunk)
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+  );
 
   const totalsByDate = new Map<string, number>();
-  for (const allocation of (allocations ?? []) as AllocationRow[]) {
+  for (const allocation of allocationRows) {
     const date = dateByMovementId.get(allocation.movement_id);
     if (!date) {
       continue;
