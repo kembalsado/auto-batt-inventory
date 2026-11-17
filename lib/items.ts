@@ -12,15 +12,23 @@ export interface Item {
   is_active: boolean;
   created_by: string | null;
   created_at: string;
+  make_id: string | null;
+  model: string | null;
+  variant: string | null;
+  year: number | null;
 }
 
-/** Fields accepted by `createItem`. */
+/** Fields accepted by `createItem` (and, as a full replacement set, `updateItem`). */
 export interface CreateItemInput {
   sku: string;
   name: string;
   categoryId: string | null;
   unit: string;
   lowStockThreshold?: number | null;
+  makeId?: string | null;
+  model?: string | null;
+  variant?: string | null;
+  year?: number | null;
 }
 
 /**
@@ -42,6 +50,10 @@ export async function createItem(
       unit: input.unit,
       low_stock_threshold: input.lowStockThreshold ?? null,
       created_by: actorId,
+      make_id: input.makeId ?? null,
+      model: input.model ?? null,
+      variant: input.variant ?? null,
+      year: input.year ?? null,
     })
     .select()
     .single();
@@ -56,6 +68,52 @@ export async function createItem(
     entityType: "item",
     entityId: data.id,
     summary: `Created item ${data.sku}`,
+  });
+
+  return data;
+}
+
+/**
+ * Updates an existing item in place and records an audit_log entry for it.
+ * `input` is the same full field set `createItem` accepts — the edit form
+ * always submits everything the add form does, so there's no separate
+ * "partial update" shape. As with `createItem`, a duplicate `sku` is
+ * rejected by the database's unique constraint and surfaced here as a
+ * thrown error (callers check it with `isUniqueViolation`).
+ */
+export async function updateItem(
+  supabase: SupabaseClient,
+  actorId: string,
+  itemId: string,
+  input: CreateItemInput
+): Promise<Item> {
+  const { data, error } = await supabase
+    .from("items")
+    .update({
+      sku: input.sku,
+      name: input.name,
+      category_id: input.categoryId,
+      unit: input.unit,
+      low_stock_threshold: input.lowStockThreshold ?? null,
+      make_id: input.makeId ?? null,
+      model: input.model ?? null,
+      variant: input.variant ?? null,
+      year: input.year ?? null,
+    })
+    .eq("id", itemId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  await recordAudit(supabase, {
+    actorId,
+    action: "item.updated",
+    entityType: "item",
+    entityId: data.id,
+    summary: `Updated item ${data.sku}`,
   });
 
   return data;
@@ -143,4 +201,44 @@ export async function getItemBatchesForViewer(
     delete stripped.unit_cost;
     return stripped;
   });
+}
+
+/**
+ * Distinct, non-empty `model` and `variant` values across all items,
+ * sorted, for `<datalist>` suggestions on the add/edit item forms.
+ *
+ * Fetches both columns in a single unfiltered query and filters/dedupes
+ * each column independently in application code, rather than filtering
+ * server-side with `.not("model", "is", null).not("variant", "is", null)`
+ * — that would require BOTH columns to be non-null on the same row, so a
+ * row with a Model set but no Variant (or vice versa) would be silently
+ * dropped from both lists instead of contributing to the one it has a
+ * value for.
+ */
+export async function listDistinctModelsAndVariants(
+  supabase: SupabaseClient
+): Promise<{ models: string[]; variants: string[] }> {
+  const { data, error } = await supabase.from("items").select("model, variant");
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as { model: string | null; variant: string | null }[];
+
+  const models = new Set<string>();
+  const variants = new Set<string>();
+  for (const row of rows) {
+    if (row.model) {
+      models.add(row.model);
+    }
+    if (row.variant) {
+      variants.add(row.variant);
+    }
+  }
+
+  return {
+    models: Array.from(models).sort(),
+    variants: Array.from(variants).sort(),
+  };
 }
