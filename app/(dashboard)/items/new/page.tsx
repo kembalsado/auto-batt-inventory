@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
-import { createItem } from "@/lib/items";
+import { createItem, listDistinctModelsAndVariants } from "@/lib/items";
 import { listCategories } from "@/lib/categories";
+import { listCarMakes } from "@/lib/car-makes";
 import { isUniqueViolation } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,11 @@ async function addItem(formData: FormData) {
   const lowStockThreshold = lowStockThresholdRaw
     ? Number(lowStockThresholdRaw)
     : null;
+  const makeId = String(formData.get("makeId") ?? "").trim() || null;
+  const model = String(formData.get("model") ?? "").trim() || null;
+  const variant = String(formData.get("variant") ?? "").trim() || null;
+  const yearRaw = String(formData.get("year") ?? "").trim();
+  const year = yearRaw ? Number(yearRaw) : null;
 
   if (!sku || !name) {
     redirect("/items/new?error=missing-fields");
@@ -51,6 +57,10 @@ async function addItem(formData: FormData) {
       categoryId,
       unit,
       lowStockThreshold,
+      makeId,
+      model,
+      variant,
+      year,
     });
   } catch (error) {
     if (!isUniqueViolation(error)) {
@@ -78,7 +88,11 @@ export default async function NewItemPage({
 }) {
   const { error, sku } = await searchParams;
   const supabase = await createServerClient();
-  const categories = await listCategories(supabase);
+  const [categories, makes, { models, variants }] = await Promise.all([
+    listCategories(supabase),
+    listCarMakes(supabase),
+    listDistinctModelsAndVariants(supabase),
+  ]);
 
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
 
@@ -127,6 +141,67 @@ export default async function NewItemPage({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="makeId">Make</Label>
+          <select
+            id="makeId"
+            name="makeId"
+            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <option value="">None</option>
+            {makes.map((make) => (
+              <option key={make.id} value={make.id}>
+                {make.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="model">Model</Label>
+          <Input
+            id="model"
+            name="model"
+            list="model-suggestions"
+            placeholder="Optional"
+            className="h-11"
+          />
+          <datalist id="model-suggestions">
+            {models.map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="variant">Variant</Label>
+          <Input
+            id="variant"
+            name="variant"
+            list="variant-suggestions"
+            placeholder="Optional"
+            className="h-11"
+          />
+          <datalist id="variant-suggestions">
+            {variants.map((variant) => (
+              <option key={variant} value={variant} />
+            ))}
+          </datalist>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="year">Year</Label>
+          <Input
+            id="year"
+            name="year"
+            type="number"
+            min={1980}
+            max={new Date().getFullYear() + 1}
+            placeholder="Optional"
+            className="h-11"
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">
