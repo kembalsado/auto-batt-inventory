@@ -130,3 +130,38 @@ export function CalendarSkeleton() {
     </div>
   );
 }
+
+/**
+ * Stands in for the Reports page (app/(dashboard)/reports/page.tsx):
+ * the Day/Month/Year tab pill row, then the same colored nav-header +
+ * two-stat-tile + table shape `CalendarSkeleton` above uses for its own
+ * header/grid, since Reports reuses that exact container styling.
+ */
+export function ReportsSkeleton() {
+  return (
+    <div>
+      <div className="mt-4 h-9 w-48">
+        <Skeleton className="h-9 w-48 rounded-lg" />
+      </div>
+      <div className="mt-6 max-w-3xl overflow-hidden rounded-xl border border-border">
+        <div className="flex items-center justify-between bg-brand-green px-4 py-3">
+          <Skeleton className="h-9 w-9 rounded-md bg-white/15" />
+          <Skeleton className="h-5 w-32 bg-white/15" />
+          <Skeleton className="h-9 w-9 rounded-md bg-white/15" />
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-border">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="bg-card p-4">
+              <Skeleton className="mb-2 size-5 rounded" />
+              <Skeleton className="h-7 w-20" />
+              <Skeleton className="mt-2 h-3 w-24" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-card px-4 pb-2">
+          <TableSkeleton columns={3} rows={6} responsive={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
