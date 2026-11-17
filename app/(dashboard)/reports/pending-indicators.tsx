@@ -3,14 +3,21 @@
 import { useLinkStatus } from "next/link";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 /**
- * Swaps `icon` for a spinner while the enclosing `<Link>`'s navigation is in
- * flight. Must be rendered as a descendant of a `next/link` `<Link>` —
- * `useLinkStatus()` reads that Link's own pending state, not a global one,
- * so each nav control (prev/next arrows, Day/Month/Year tabs) gets
- * independent feedback without any shared state to wire up.
+ * Swaps its `children` for a spinner while the enclosing `<Link>`'s
+ * navigation is in flight. Must be rendered as a descendant of a
+ * `next/link` `<Link>` — `useLinkStatus()` reads that Link's own pending
+ * state, not a global one, so each nav control (prev/next arrows,
+ * Day/Month/Year tabs) gets independent feedback without any shared state
+ * to wire up.
+ *
+ * Takes the icon as already-rendered `children` (a React element, e.g.
+ * `<ChevronLeft />`), not a component reference (`icon: ChevronLeft`) —
+ * a component function isn't serializable across the Server/Client
+ * boundary ("Functions cannot be passed directly to Client Components"),
+ * while a Server Component rendering a child element and handing it to a
+ * Client Component as `children` is the standard, supported pattern.
  *
  * Exists because this page's view/date navigation is plain `<Link>`s with
  * no client JS (matching Calendar's own convention) — clicking one changes
@@ -23,17 +30,17 @@ import type { LucideIcon } from "lucide-react";
  * control you actually clicked, not a full-page skeleton swap.
  */
 export function PendingIcon({
-  icon: Icon,
   className,
+  children,
 }: {
-  icon: LucideIcon;
   className?: string;
+  children: React.ReactNode;
 }) {
   const { pending } = useLinkStatus();
   return pending ? (
     <Loader2 className={`${className ?? ""} animate-spin`} aria-hidden="true" />
   ) : (
-    <Icon className={className} aria-hidden="true" />
+    children
   );
 }
 

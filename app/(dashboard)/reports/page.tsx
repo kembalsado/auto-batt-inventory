@@ -293,7 +293,9 @@ export default async function ReportsPage({
             aria-label={prevLabel}
             className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
           >
-            <PendingIcon icon={ChevronLeft} className="size-4" />
+            <PendingIcon className="size-4">
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </PendingIcon>
           </Link>
           <span className="text-base font-extrabold">{periodLabel}</span>
           <Link
@@ -301,7 +303,9 @@ export default async function ReportsPage({
             aria-label={nextLabel}
             className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 hover:bg-white/20"
           >
-            <PendingIcon icon={ChevronRight} className="size-4" />
+            <PendingIcon className="size-4">
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </PendingIcon>
           </Link>
         </div>
 
