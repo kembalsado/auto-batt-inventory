@@ -27,7 +27,8 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
       (row) =>
         row.sku.toLowerCase().includes(normalized) ||
         row.name.toLowerCase().includes(normalized) ||
-        row.category.toLowerCase().includes(normalized)
+        row.category.toLowerCase().includes(normalized) ||
+        row.vehicle.toLowerCase().includes(normalized)
     );
   }, [rows, query]);
 
@@ -71,6 +72,7 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
             <th className="py-2 font-medium">SKU</th>
             <th className="py-2 font-medium">Name</th>
             <th className="py-2 font-medium">Category</th>
+            <th className="py-2 font-medium">Vehicle</th>
             <th className="py-2 font-medium">Unit</th>
             <th className="py-2 font-medium">Qty on hand</th>
           </tr>
@@ -94,6 +96,7 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
                 )}
               </td>
               <td className="py-2">{row.category}</td>
+              <td className="py-2">{row.vehicle}</td>
               <td className="py-2">{row.unit}</td>
               <td className="py-2">
                 <span className="flex items-center gap-2">
@@ -105,7 +108,7 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
           ))}
           {filteredRows.length === 0 && (
             <tr>
-              <td colSpan={5} className="py-2 text-sm text-muted-foreground">
+              <td colSpan={6} className="py-2 text-sm text-muted-foreground">
                 {rows.length === 0 ? "No items yet." : "No items match your search."}
               </td>
             </tr>
@@ -137,6 +140,7 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
                 {!row.isActive && <Badge variant="secondary">Inactive</Badge>}
               </span>
             </div>
+            <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
           </Link>
         ))}
       </div>

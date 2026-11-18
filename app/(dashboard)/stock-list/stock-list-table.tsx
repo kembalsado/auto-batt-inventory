@@ -25,7 +25,7 @@ export function StockListTable({
   showCost: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const columnCount = showCost ? 7 : 5;
+  const columnCount = showCost ? 8 : 6;
 
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -34,7 +34,8 @@ export function StockListTable({
       (row) =>
         row.sku.toLowerCase().includes(normalized) ||
         row.name.toLowerCase().includes(normalized) ||
-        row.category.toLowerCase().includes(normalized)
+        row.category.toLowerCase().includes(normalized) ||
+        row.vehicle.toLowerCase().includes(normalized)
     );
   }, [rows, query]);
 
@@ -67,6 +68,7 @@ export function StockListTable({
             <th className="py-2 font-medium">SKU</th>
             <th className="py-2 font-medium">Name</th>
             <th className="py-2 font-medium">Category</th>
+            <th className="py-2 font-medium">Vehicle</th>
             <th className="py-2 font-medium">Qty on hand</th>
             <th className="py-2 font-medium">Unit</th>
             {showCost && <th className="py-2 font-medium">Unit cost</th>}
@@ -81,6 +83,7 @@ export function StockListTable({
               <td className="py-2">{row.sku}</td>
               <td className="py-2">{row.name}</td>
               <td className="py-2">{row.category}</td>
+              <td className="py-2">{row.vehicle}</td>
               <td className="py-2">{row.qtyOnHand}</td>
               <td className="py-2">{row.unit}</td>
               {showCost && (
@@ -130,6 +133,7 @@ export function StockListTable({
                 {row.qtyOnHand} {row.unit}
               </span>
             </div>
+            <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
             {showCost && row.unitCost !== undefined && (
               <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
                 <span>Unit cost: {formatCurrency(row.unitCost)}</span>
