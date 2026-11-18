@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "@/lib/supabase/server";
 import {
@@ -8,6 +10,7 @@ import {
 } from "@/lib/movements";
 import { getItemStockSummary } from "@/lib/stock";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { StockInForm } from "./stock-in-form";
 import { StockOutForm } from "./stock-out-form";
 import { MovementsList, type VoidActionResult } from "./movements-list";
@@ -87,7 +90,7 @@ export default async function ItemDetailPage({
 
   const { data: item } = await supabase
     .from("items")
-    .select("*")
+    .select("*, categories(name), car_makes(name)")
     .eq("id", id)
     .single();
 
@@ -104,9 +107,17 @@ export default async function ItemDetailPage({
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold text-brand-ink">{item.name}</h1>
-        {summary.isLowStock && <Badge variant="warning">Low stock</Badge>}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold text-brand-ink">{item.name}</h1>
+          {summary.isLowStock && <Badge variant="warning">Low stock</Badge>}
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/items/${item.id}/edit`}>
+            <Pencil aria-hidden="true" />
+            Edit
+          </Link>
+        </Button>
       </div>
       <p className="text-sm text-muted-foreground">{item.sku}</p>
       <p className="mt-2 text-sm text-brand-ink">
@@ -115,6 +126,39 @@ export default async function ItemDetailPage({
           {summary.qtyOnHand} {item.unit}
         </span>
       </p>
+
+      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        {item.categories?.name && (
+          <div>
+            <dt className="inline font-medium text-brand-ink">Category: </dt>
+            <dd className="inline">{item.categories.name}</dd>
+          </div>
+        )}
+        {item.car_makes?.name && (
+          <div>
+            <dt className="inline font-medium text-brand-ink">Make: </dt>
+            <dd className="inline">{item.car_makes.name}</dd>
+          </div>
+        )}
+        {item.model && (
+          <div>
+            <dt className="inline font-medium text-brand-ink">Model: </dt>
+            <dd className="inline">{item.model}</dd>
+          </div>
+        )}
+        {item.variant && (
+          <div>
+            <dt className="inline font-medium text-brand-ink">Variant: </dt>
+            <dd className="inline">{item.variant}</dd>
+          </div>
+        )}
+        {item.year && (
+          <div>
+            <dt className="inline font-medium text-brand-ink">Year: </dt>
+            <dd className="inline">{item.year}</dd>
+          </div>
+        )}
+      </dl>
 
       <StockInForm itemId={item.id} errorMessage={stockInError} />
       <StockOutForm
