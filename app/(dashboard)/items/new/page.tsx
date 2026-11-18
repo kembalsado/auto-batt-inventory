@@ -8,27 +8,72 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+// Every field this form submits, as its raw (trimmed, still-a-string) form
+// value — round-tripped onto an error redirect via buildErrorRedirectParams
+// so a failed submission (missing fields, duplicate SKU) re-displays
+// exactly what the user typed/selected instead of discarding it. Mirrors
+// app/(dashboard)/items/[id]/edit/page.tsx's identical fix (Finding 4 of
+// the branch-wide review) — applied here too for consistency, even though
+// the Add form has no "stale saved data" to silently overwrite the way
+// Edit did; losing unsaved input on every field but SKU was still a real
+// (if lesser) annoyance.
+interface RawItemFormFields {
+  sku: string;
+  name: string;
+  categoryId: string;
+  makeId: string;
+  model: string;
+  variant: string;
+  year: string;
+  unit: string;
+  lowStockThreshold: string;
+}
+
+function buildErrorRedirectParams(
+  error: string,
+  fields: RawItemFormFields
+): string {
+  return new URLSearchParams({ error, ...fields }).toString();
+}
+
 async function addItem(formData: FormData) {
   "use server";
 
   const sku = String(formData.get("sku") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
-  const categoryId = String(formData.get("categoryId") ?? "").trim() || null;
-  const unit = String(formData.get("unit") ?? "").trim() || "pcs";
+  const categoryIdRaw = String(formData.get("categoryId") ?? "").trim();
+  const categoryId = categoryIdRaw || null;
+  const unitRaw = String(formData.get("unit") ?? "").trim();
+  const unit = unitRaw || "pcs";
   const lowStockThresholdRaw = String(
     formData.get("lowStockThreshold") ?? ""
   ).trim();
   const lowStockThreshold = lowStockThresholdRaw
     ? Number(lowStockThresholdRaw)
     : null;
-  const makeId = String(formData.get("makeId") ?? "").trim() || null;
-  const model = String(formData.get("model") ?? "").trim() || null;
-  const variant = String(formData.get("variant") ?? "").trim() || null;
+  const makeIdRaw = String(formData.get("makeId") ?? "").trim();
+  const makeId = makeIdRaw || null;
+  const modelRaw = String(formData.get("model") ?? "").trim();
+  const model = modelRaw || null;
+  const variantRaw = String(formData.get("variant") ?? "").trim();
+  const variant = variantRaw || null;
   const yearRaw = String(formData.get("year") ?? "").trim();
   const year = yearRaw ? Number(yearRaw) : null;
 
+  const rawFields: RawItemFormFields = {
+    sku,
+    name,
+    categoryId: categoryIdRaw,
+    makeId: makeIdRaw,
+    model: modelRaw,
+    variant: variantRaw,
+    year: yearRaw,
+    unit: unitRaw,
+    lowStockThreshold: lowStockThresholdRaw,
+  };
+
   if (!sku || !name) {
-    redirect("/items/new?error=missing-fields");
+    redirect(`/items/new?${buildErrorRedirectParams("missing-fields", rawFields)}`);
   }
 
   const supabase = await createServerClient();
@@ -70,7 +115,7 @@ async function addItem(formData: FormData) {
   }
 
   if (duplicateSku) {
-    redirect(`/items/new?error=duplicate-sku&sku=${encodeURIComponent(sku)}`);
+    redirect(`/items/new?${buildErrorRedirectParams("duplicate-sku", rawFields)}`);
   }
 
   redirect("/items");
@@ -84,9 +129,31 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function NewItemPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; sku?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    sku?: string;
+    name?: string;
+    categoryId?: string;
+    makeId?: string;
+    model?: string;
+    variant?: string;
+    year?: string;
+    unit?: string;
+    lowStockThreshold?: string;
+  }>;
 }) {
-  const { error, sku } = await searchParams;
+  const {
+    error,
+    sku,
+    name,
+    categoryId,
+    makeId,
+    model,
+    variant,
+    year,
+    unit,
+    lowStockThreshold,
+  } = await searchParams;
   const supabase = await createServerClient();
   const [categories, makes, { models, variants }] = await Promise.all([
     listCategories(supabase),
@@ -124,7 +191,14 @@ export default async function NewItemPage({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="name">Name</Label>
-          <Input id="name" name="name" required placeholder="12V Battery" className="h-11" />
+          <Input
+            id="name"
+            name="name"
+            required
+            defaultValue={name ?? ""}
+            placeholder="12V Battery"
+            className="h-11"
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -132,6 +206,7 @@ export default async function NewItemPage({
           <select
             id="categoryId"
             name="categoryId"
+            defaultValue={categoryId ?? ""}
             className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">None</option>
@@ -148,6 +223,7 @@ export default async function NewItemPage({
           <select
             id="makeId"
             name="makeId"
+            defaultValue={makeId ?? ""}
             className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">None</option>
@@ -165,6 +241,7 @@ export default async function NewItemPage({
             id="model"
             name="model"
             list="model-suggestions"
+            defaultValue={model ?? ""}
             placeholder="Optional"
             className="h-11"
           />
@@ -181,6 +258,7 @@ export default async function NewItemPage({
             id="variant"
             name="variant"
             list="variant-suggestions"
+            defaultValue={variant ?? ""}
             placeholder="Optional"
             className="h-11"
           />
@@ -197,8 +275,9 @@ export default async function NewItemPage({
             id="year"
             name="year"
             type="number"
-            min={1980}
+            min={1900}
             max={new Date().getFullYear() + 1}
+            defaultValue={year ?? ""}
             placeholder="Optional"
             className="h-11"
           />
@@ -206,7 +285,7 @@ export default async function NewItemPage({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="unit">Unit</Label>
-          <Input id="unit" name="unit" defaultValue="pcs" className="h-11" />
+          <Input id="unit" name="unit" defaultValue={unit ?? "pcs"} className="h-11" />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -217,6 +296,7 @@ export default async function NewItemPage({
             type="number"
             min="0"
             step="any"
+            defaultValue={lowStockThreshold ?? ""}
             placeholder="Optional"
             className="h-11"
           />
