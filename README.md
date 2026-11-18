@@ -29,6 +29,10 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Deploying
+
+Database migrations in `supabase/migrations/` are **not** automatically applied to production. After merging a branch that adds migrations, run `supabase db push` (or this project's established equivalent) against the linked production Supabase project before or immediately after deploying the application code. A page whose query depends on a new column, table, or grant will error until the migration lands — migrations and app code both need to ship for a release to actually work.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

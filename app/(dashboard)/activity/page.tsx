@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/button";
 // even on a freshly-seeded, near-empty audit_log.
 const ACTIONS = [
   "item.created",
+  // Written by updateItem (lib/items.ts) for the item edit form — missing
+  // from this list until the branch-wide review, same gap "user.created"
+  // below once had: the rows were being recorded but unfilterable.
+  "item.updated",
   "category.created",
   "settings.updated",
   "movement.created",
@@ -24,6 +28,9 @@ const ACTIONS = [
   // after the fact like "user.created" above.
   "user.deactivated",
   "user.activated",
+  // Written by createCarMake (lib/car-makes.ts) for the Makes management
+  // page's "Add make" action.
+  "car_make.created",
 ];
 
 function formatDate(value: string): string {

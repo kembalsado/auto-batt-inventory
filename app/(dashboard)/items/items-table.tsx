@@ -140,7 +140,9 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
                 {!row.isActive && <Badge variant="secondary">Inactive</Badge>}
               </span>
             </div>
-            <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
+            {row.vehicle !== "—" && (
+              <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
+            )}
           </Link>
         ))}
       </div>

@@ -133,7 +133,9 @@ export function StockListTable({
                 {row.qtyOnHand} {row.unit}
               </span>
             </div>
-            <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
+            {row.vehicle !== "—" && (
+              <div className="mt-1 text-sm text-muted-foreground">{row.vehicle}</div>
+            )}
             {showCost && row.unitCost !== undefined && (
               <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
                 <span>Unit cost: {formatCurrency(row.unitCost)}</span>

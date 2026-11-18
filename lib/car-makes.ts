@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordAudit } from "@/lib/audit";
 
-/** One `car_makes` row. See supabase/migrations/0002_car_makes.sql. */
+/** One `car_makes` row. See supabase/migrations/0016_car_makes.sql. */
 export interface CarMake {
   id: string;
   name: string;
