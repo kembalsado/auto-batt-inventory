@@ -1,0 +1,43 @@
+-- Auto Batt Inventory — explicit base table grants for `car_makes`
+--
+-- 0016_car_makes created the `car_makes` table and its two RLS policies
+-- (select + insert, for `authenticated`) but never granted the underlying
+-- base SQL table privileges — the same gap 0013/0014 already documented
+-- and fixed for every other application table. Postgres checks base table
+-- privileges BEFORE evaluating RLS policies, so a perfectly correct RLS
+-- policy with no underlying grant is simply unreachable: the query fails
+-- with `permission denied for table car_makes` (Postgres error 42501)
+-- regardless of what the policy says.
+--
+-- This was invisible locally because the local dev Supabase stack
+-- auto-grants every new table to `anon`/`authenticated`/`service_role` —
+-- exactly the local/production mismatch that caused the real production
+-- outage 0014 documents: "Add user" succeeded at creating the auth account,
+-- then failed on the very next step with "permission denied for table
+-- audit_log" (42501), leaving a real auth user and its trigger-created
+-- profiles row behind with no audit trail. On this project's production
+-- instance (created with "Automatically expose new tables" unchecked —
+-- see 0013's header), the identical class of bug would hit `car_makes` on
+-- every query that touches it: `buildStockListRows` (lib/stock-list.ts,
+-- used by /items, /stock-list, and both PDF/Excel export routes), the item
+-- fetch on app/(dashboard)/items/[id]/page.tsx, and `listCarMakes`
+-- (lib/car-makes.ts, used by /makes, /items/new, /items/[id]/edit).
+--
+-- Fix: explicit base grants to `authenticated` and `service_role`, with
+-- RLS continuing to be the real fine-grained gate exactly as 0016 already
+-- assumed. `car_makes` has no update/delete RLS policy — by design, per
+-- 0016's own comment ("Renaming/deleting isn't supported yet ... so no
+-- update/delete policy exists") — so granting update/delete at the table
+-- level here does not newly permit `authenticated` to update/delete rows;
+-- RLS still has no policy letting that through. This mirrors 0013's own
+-- precedent exactly: 0013 grants select/insert/update/delete on
+-- `categories` even though `categories` (0004_categories_rls.sql) also has
+-- only select/insert RLS policies and no update/delete policy either.
+--
+-- Nothing is granted to `anon`, matching 0013/0014's reasoning: this app
+-- requires a session for every dashboard route.
+--
+-- Safe to re-run: GRANT is idempotent, and on environments where the
+-- privilege already exists (local dev) this is a no-op.
+grant select, insert, update, delete on car_makes to authenticated;
+grant select, insert, update, delete on car_makes to service_role;
