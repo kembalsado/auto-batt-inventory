@@ -5,9 +5,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRole, canSeeCost } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { manilaToday } from "@/lib/date";
-import { getDailyReport, getMonthlyReport, getAnnualReport } from "@/lib/reports";
+import {
+  getDailyReport,
+  getMonthlyReport,
+  getAnnualReport,
+  getItemActivityByDate,
+  type ItemActivity,
+} from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
 import { ReportTable, type ReportTableRow } from "./report-table";
+import { ItemActivityList } from "./item-activity-list";
 import { PendingIcon, PendingLabel, PendingSubmitButton } from "./pending-indicators";
 
 const MONTH_NAMES = [
@@ -144,6 +151,7 @@ export default async function ReportsPage({
   let purchases = 0;
   let stockOutValue = 0;
   let tableRows: ReportTableRow[] = [];
+  let itemActivity: ItemActivity[] = [];
   let periodLabel = "";
   let prevHref = "";
   let nextHref = "";
@@ -151,9 +159,13 @@ export default async function ReportsPage({
   let nextLabel = "";
 
   if (view === "day") {
-    const report = await getDailyReport(supabase, adminSupabase, date);
+    const [report, activity] = await Promise.all([
+      getDailyReport(supabase, adminSupabase, date),
+      getItemActivityByDate(supabase, adminSupabase, date),
+    ]);
     purchases = report.purchases;
     stockOutValue = report.stockOutValue;
+    itemActivity = activity;
     const [dateYear, dateMonth, dateDay] = date.split("-").map(Number);
     periodLabel = `${MONTH_NAMES[dateMonth - 1]} ${dateDay}, ${dateYear}`;
     prevHref = dayHref(shiftDay(date, -1));
@@ -325,6 +337,12 @@ export default async function ReportsPage({
             <span className="text-xs text-muted-foreground">Stock-out value</span>
           </div>
         </div>
+
+        {view === "day" && (
+          <div className="bg-card px-4 pb-2">
+            <ItemActivityList items={itemActivity} />
+          </div>
+        )}
 
         {view !== "day" && (
           <div className="bg-card px-4 pb-2">

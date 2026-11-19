@@ -44,6 +44,8 @@ let originalSettings: AppSettings;
 let OWNER_ID: string;
 let ASSISTANT_ID: string;
 let ASSISTANT_EMAIL: string;
+let ownerEmail: string;
+let today: string;
 const createdItemIds: string[] = [];
 const createdCategoryIds: string[] = [];
 
@@ -59,7 +61,7 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
     originalSettings = await getSettings(admin);
 
     const runId = randomUUID().slice(0, 8);
-    const ownerEmail = `test-reports-gating-owner-${runId}@example.com`;
+    ownerEmail = `test-reports-gating-owner-${runId}@example.com`;
     ASSISTANT_EMAIL = `test-reports-gating-assistant-${runId}@example.com`;
 
     const { data: owner } = await admin.auth.admin.createUser({
@@ -93,7 +95,7 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
 
     // Today's date, so this purchase lands inside the Month view the page
     // renders by default (no ?view=/&date=/&year=/&month= query params).
-    const today = new Date().toISOString().slice(0, 10);
+    today = new Date().toISOString().slice(0, 10);
     await recordStockIn(admin, OWNER_ID, {
       itemId: item.id,
       qty: 1,
@@ -143,6 +145,30 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
     // itself never rendered. Check every plausible formatting of the
     // seeded cost (formatCurrency renders "12,345.00"; a raw/unformatted
     // leak would still contain the bare digits).
+    expect(body).not.toContain("12345");
+    expect(body).not.toContain("12,345.00");
+  });
+
+  test("an owner sees the per-item list on Day view, with cost", async () => {
+    const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+    const res = await fetch(`${BASE_URL}/reports?view=day&date=${today}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("Reports Gating Test Item");
+    expect(body).toContain("12,345.00");
+  });
+
+  test("an assistant with cost hidden never sees the per-item list's cost on Day view", async () => {
+    const cookie = await signInCookieHeader(ASSISTANT_EMAIL, PASSWORD);
+    const res = await fetch(`${BASE_URL}/reports?view=day&date=${today}`, {
+      headers: { Cookie: cookie },
+    });
+    const body = await res.text();
+    expect(body).toContain(
+      "Ask the owner to turn on cost visibility in Settings to see this page."
+    );
     expect(body).not.toContain("12345");
     expect(body).not.toContain("12,345.00");
   });
