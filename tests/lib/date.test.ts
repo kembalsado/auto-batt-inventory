@@ -1,4 +1,4 @@
-import { manilaToday, SHOP_TIME_ZONE } from "@/lib/date";
+import { manilaToday, manilaTime, SHOP_TIME_ZONE } from "@/lib/date";
 
 test("manilaToday formats as YYYY-MM-DD", () => {
   expect(manilaToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -36,4 +36,19 @@ test("an early-morning Manila instant is dated that Manila day, not the previous
 
   expect(earlyManila.toISOString().slice(0, 10)).toBe("2026-11-12");
   expect(manilaToday(earlyManila)).toBe("2026-11-13");
+});
+
+test("manilaTime formats a timestamptz string as a 12-hour Asia/Manila clock time", () => {
+  // 2026-11-19T20:02:00Z is 04:02 on 2026-11-20 in Manila (UTC+8).
+  expect(manilaTime("2026-11-19T20:02:00Z")).toBe("4:02 AM");
+});
+
+test("manilaTime pads single-digit minutes but not the hour", () => {
+  // 2026-11-19T21:09:00Z is 05:09 on 2026-11-20 in Manila.
+  expect(manilaTime("2026-11-19T21:09:00Z")).toBe("5:09 AM");
+});
+
+test("manilaTime formats a PM time correctly", () => {
+  // 2026-11-19T06:30:00Z is 14:30 (2:30 PM) on 2026-11-19 in Manila.
+  expect(manilaTime("2026-11-19T06:30:00Z")).toBe("2:30 PM");
 });

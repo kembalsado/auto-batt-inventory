@@ -289,6 +289,8 @@ interface DayMovementRow {
   type: "IN" | "OUT";
   quantity: number;
   batch_id: string | null;
+  /** ISO timestamp — when this movement was recorded, not just its date. */
+  created_at: string;
 }
 
 /** Row shape read from the `batches_for_viewer` lookup below (IN side). */
@@ -330,7 +332,22 @@ interface ItemActivityItemQueryRow extends Omit<ItemActivityItemRow, "car_makes"
   car_makes: { name: string }[] | null;
 }
 
-/** One item's movement/cost totals for a single calendar day. */
+/** One non-voided movement on an `ItemActivity` row, individually. */
+export interface ItemActivityMovement {
+  movementId: string;
+  type: "IN" | "OUT";
+  /** ISO timestamp (`stock_movements.created_at`) — when this specific
+   * movement was recorded, for display via `lib/date.ts`'s `manilaTime`. */
+  occurredAt: string;
+  quantity: number;
+  /** This movement's own cost — `quantity * unit_cost` for an IN drawn from
+   * a purchase batch (0 for an opening-stock import or an unresolved
+   * cost), or the sum of this OUT's `movement_allocations` rows. Never a
+   * per-item total; see `ItemActivity.movements` for that roll-up. */
+  cost: number;
+}
+
+/** One item's individual movements for a single calendar day. */
 export interface ItemActivity {
   itemId: string;
   sku: string;
@@ -338,17 +355,20 @@ export interface ItemActivity {
   /** "Make Model Variant Year", skipping unset parts — "—" when none are set. */
   vehicle: string;
   unit: string;
-  qtyIn: number;
-  qtyOut: number;
-  costIn: number;
-  costOut: number;
+  /** Every non-voided IN/OUT movement for this item on the date, sorted
+   * chronologically (earliest first) by `occurredAt` — not bucketed by
+   * type, so an IN and a later OUT on the same day appear in the order
+   * they actually happened. */
+  movements: ItemActivityMovement[];
 }
 
 /**
  * Breaks `getPurchasesByDate`/`getStockOutValueByDate`'s all-items totals
  * down per item for one calendar `date`: which items had any non-voided
- * movement that day, and each one's IN/OUT quantity and cost, kept
- * separate (an item can be both received and sold on the same day).
+ * movement that day, and each individual movement's own time, quantity,
+ * and cost — not rolled up into a day total, since the point of this
+ * breakdown is seeing which transaction happened first (an item can be
+ * both received and sold, more than once each, on the same day).
  *
  * All four bulk reads below are paged/chunked via `fetchAllPages`/
  * `fetchAllForIds`, the same way `getPurchasesByDate`/
@@ -372,20 +392,22 @@ export interface ItemActivity {
  *   `batch_id`s collected from them — those batches via
  *   `batches_for_viewer` (not raw `batches`), read with `supabase` so
  *   `unit_cost` resolves against the caller's own session the same way
- *   `getPurchasesByDate` does. `qtyIn` accumulates every IN movement's
- *   quantity unconditionally; `costIn` only adds a batch's
- *   `quantity * unit_cost` when `source === "purchase"` and `unit_cost`
- *   is non-null — an opening-stock import (`lib/import.ts`) still shows
- *   its quantity, just with zero cost, mirroring `getPurchasesByDate`'s
+ *   `getPurchasesByDate` does. Each IN movement's own `quantity` carries
+ *   through unconditionally; its `cost` is `quantity * unit_cost` only
+ *   when its batch's `source === "purchase"` and `unit_cost` is
+ *   non-null — an opening-stock import (`lib/import.ts`) still shows its
+ *   quantity, just with zero cost, mirroring `getPurchasesByDate`'s
  *   purchase-only cost rule without dropping the row entirely.
  * - OUT: every non-voided OUT movement on `date`, then — by their ids —
  *   the `movement_allocations` rows they produced, read with
  *   `adminSupabase` (the only client with any readable path to that
- *   table — see `getStockOutValueByDate`). `qtyOut` accumulates every OUT
- *   movement's quantity unconditionally; `costOut` sums
- *   `qty_allocated * unit_cost_at_allocation` per the allocation's parent
- *   movement's `item_id`. Voided-OUT exclusion happens at the
- *   `stock_movements` step (`voided_at is null`), the same
+ *   table — see `getStockOutValueByDate`). Each OUT movement's own
+ *   `quantity` carries through unconditionally; its `cost` sums
+ *   `qty_allocated * unit_cost_at_allocation` across every allocation
+ *   *that specific movement* produced (a single OUT can draw from more
+ *   than one batch under FIFO, fanning out into several allocation rows
+ *   that all roll up into that one movement's cost). Voided-OUT exclusion
+ *   happens at the `stock_movements` step (`voided_at is null`), the same
  *   join-through-the-movement reasoning `getStockOutValueByDate`'s
  *   docstring explains in full.
  *
@@ -405,8 +427,11 @@ export interface ItemActivity {
  * `date` — the same "no entry means nothing happened" convention every
  * other function in this file uses, just as an array instead of a map
  * since the caller always wants every item's row, not a lookup by date.
- * Sorted by `name`, matching `lib/stock-list.ts`'s `.order("name")`
- * convention for item listings.
+ * Items are sorted by `name`, matching `lib/stock-list.ts`'s
+ * `.order("name")` convention for item listings; each item's own
+ * `movements` are sorted chronologically (earliest first) by
+ * `occurredAt`, answering "which transaction happened first" directly
+ * rather than leaving the caller to sort a day total's components.
  */
 export async function getItemActivityByDate(
   supabase: SupabaseClient,
@@ -416,7 +441,7 @@ export async function getItemActivityByDate(
   const movements = await fetchAllPages<DayMovementRow>((offset) =>
     supabase
       .from("stock_movements")
-      .select("id, item_id, type, quantity, batch_id")
+      .select("id, item_id, type, quantity, batch_id, created_at")
       .eq("movement_date", date)
       .is("voided_at", null)
       .order("id", { ascending: true })
@@ -470,45 +495,42 @@ export async function getItemActivityByDate(
     batchById.set(batch.id, batch);
   }
 
-  const qtyInByItemId = new Map<string, number>();
-  const costInByItemId = new Map<string, number>();
+  // Each movement's own cost, keyed by movement id rather than item id —
+  // the per-item roll-up this file used to compute here is now just
+  // `movements.reduce(...)` at render/test time when anyone needs a total.
+  const costByMovementId = new Map<string, number>();
   for (const movement of inMovements) {
-    qtyInByItemId.set(
-      movement.item_id,
-      (qtyInByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
-    );
-
     const batch = movement.batch_id ? batchById.get(movement.batch_id) : undefined;
     if (!batch || batch.source !== "purchase" || batch.unit_cost == null) {
       continue;
     }
-    const cost = Number(movement.quantity) * Number(batch.unit_cost);
-    costInByItemId.set(movement.item_id, (costInByItemId.get(movement.item_id) ?? 0) + cost);
+    costByMovementId.set(movement.id, Number(movement.quantity) * Number(batch.unit_cost));
   }
-
-  const itemIdByMovementId = new Map<string, string>();
-  const qtyOutByItemId = new Map<string, number>();
-  for (const movement of outMovements) {
-    itemIdByMovementId.set(movement.id, movement.item_id);
-    qtyOutByItemId.set(
-      movement.item_id,
-      (qtyOutByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
+  for (const allocation of allocationRows) {
+    const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
+    costByMovementId.set(
+      allocation.movement_id,
+      (costByMovementId.get(allocation.movement_id) ?? 0) + cost
     );
   }
 
-  const costOutByItemId = new Map<string, number>();
-  for (const allocation of allocationRows) {
-    const itemId = itemIdByMovementId.get(allocation.movement_id);
-    if (!itemId) {
-      continue;
-    }
-    const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
-    costOutByItemId.set(itemId, (costOutByItemId.get(itemId) ?? 0) + cost);
+  const movementsByItemId = new Map<string, ItemActivityMovement[]>();
+  for (const movement of movements) {
+    const list = movementsByItemId.get(movement.item_id) ?? [];
+    list.push({
+      movementId: movement.id,
+      type: movement.type,
+      occurredAt: movement.created_at,
+      quantity: Number(movement.quantity),
+      cost: costByMovementId.get(movement.id) ?? 0,
+    });
+    movementsByItemId.set(movement.item_id, list);
+  }
+  for (const list of movementsByItemId.values()) {
+    list.sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
   }
 
-  const itemIds = Array.from(
-    new Set([...qtyInByItemId.keys(), ...qtyOutByItemId.keys()])
-  );
+  const itemIds = Array.from(movementsByItemId.keys());
   if (itemIds.length === 0) {
     return [];
   }
@@ -535,10 +557,7 @@ export async function getItemActivityByDate(
         .filter(Boolean)
         .join(" ") || "—",
     unit: item.unit,
-    qtyIn: qtyInByItemId.get(item.id) ?? 0,
-    qtyOut: qtyOutByItemId.get(item.id) ?? 0,
-    costIn: costInByItemId.get(item.id) ?? 0,
-    costOut: costOutByItemId.get(item.id) ?? 0,
+    movements: movementsByItemId.get(item.id) ?? [],
   }));
 
   activity.sort((a, b) => a.name.localeCompare(b.name));

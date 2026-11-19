@@ -326,12 +326,17 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
 
       const result = await getItemActivityByDate(ownerClient, admin, "2026-11-20");
       const row = result.find((r) => r.itemId === item.id)!;
-      expect(row.qtyIn).toBe(10);
-      expect(row.costIn).toBe(1000);
-      expect(row.qtyOut).toBe(3);
-      expect(row.costOut).toBe(300); // FIFO: 3 * 100
       expect(row.name).toBe("Item Activity Test Item");
       expect(row.sku).toBe(`IA-${runId}`);
+      expect(row.movements).toHaveLength(2);
+
+      const [inMovement, outMovement] = row.movements;
+      expect(inMovement.type).toBe("IN");
+      expect(inMovement.quantity).toBe(10);
+      expect(inMovement.cost).toBe(1000);
+      expect(outMovement.type).toBe("OUT");
+      expect(outMovement.quantity).toBe(3);
+      expect(outMovement.cost).toBe(300); // FIFO: 3 * 100
     });
 
     test("a day with no qualifying movement returns an empty array", async () => {
@@ -381,8 +386,9 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
 
       const result = await getItemActivityByDate(ownerClient, admin, openingStockDate);
       const row = result.find((r) => r.itemId === itemId)!;
-      expect(row.qtyIn).toBe(5);
-      expect(row.costIn).toBe(0);
+      expect(row.movements).toHaveLength(1);
+      expect(row.movements[0].quantity).toBe(5);
+      expect(row.movements[0].cost).toBe(0);
     });
 
     test("a deactivated item that moved stock still appears", async () => {
@@ -407,8 +413,9 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
 
       const result = await getItemActivityByDate(ownerClient, admin, "2026-11-23");
       const row = result.find((r) => r.itemId === item.id)!;
-      expect(row.qtyIn).toBe(2);
-      expect(row.costIn).toBe(100);
+      expect(row.movements).toHaveLength(1);
+      expect(row.movements[0].quantity).toBe(2);
+      expect(row.movements[0].cost).toBe(100);
     });
 
     test(
@@ -472,8 +479,14 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
           getStockOutValueByDate(admin, date, date),
         ]);
 
-        const costInSum = itemActivity.reduce((sum, r) => sum + r.costIn, 0);
-        const costOutSum = itemActivity.reduce((sum, r) => sum + r.costOut, 0);
+        const costInSum = itemActivity.reduce(
+          (sum, r) => sum + r.movements.filter((m) => m.type === "IN").reduce((s, m) => s + m.cost, 0),
+          0
+        );
+        const costOutSum = itemActivity.reduce(
+          (sum, r) => sum + r.movements.filter((m) => m.type === "OUT").reduce((s, m) => s + m.cost, 0),
+          0
+        );
 
         expect(costInSum).toBeGreaterThan(0);
         expect(costOutSum).toBeGreaterThan(0);
@@ -481,6 +494,68 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
         expect(costOutSum).toBe(stockOutByDate.get(date) ?? 0);
       }
     );
+
+    test("movements are sorted chronologically by occurredAt, across both IN and OUT, regardless of insertion order", async () => {
+      const runId = randomUUID().slice(0, 8);
+      const date = "2026-11-25";
+
+      const category = await createCategory(admin, OWNER_ID, `ItemActivity-Sort-${runId}`);
+      createdCategoryIds.push(category.id);
+      const item = await createItem(admin, OWNER_ID, {
+        sku: `IA-SORT-${runId}`,
+        name: "Item Activity Sort Test",
+        categoryId: category.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(item.id);
+
+      // Inserted IN first, but with a LATER created_at than the OUT
+      // inserted second below — proves the result sorts by occurredAt,
+      // not by insertion order or by type (IN before OUT).
+      const { data: batch, error: batchError } = await admin
+        .from("batches")
+        .insert({
+          item_id: item.id,
+          batch_date: date,
+          qty_received: 5,
+          qty_remaining: 5,
+          unit_cost: 20,
+          source: "purchase",
+          created_by: OWNER_ID,
+        })
+        .select("id")
+        .single();
+      if (batchError) throw batchError;
+
+      const { error: inError } = await admin.from("stock_movements").insert({
+        item_id: item.id,
+        type: "IN",
+        quantity: 5,
+        batch_id: batch.id,
+        movement_date: date,
+        created_at: "2026-11-25T05:00:00Z",
+        created_by: OWNER_ID,
+      });
+      if (inError) throw inError;
+
+      const { error: outError } = await admin.from("stock_movements").insert({
+        item_id: item.id,
+        type: "OUT",
+        quantity: 1,
+        movement_date: date,
+        created_at: "2026-11-25T01:00:00Z",
+        created_by: OWNER_ID,
+      });
+      if (outError) throw outError;
+
+      const result = await getItemActivityByDate(ownerClient, admin, date);
+      const row = result.find((r) => r.itemId === item.id)!;
+
+      expect(row.movements.map((m) => m.type)).toEqual(["OUT", "IN"]);
+      expect(new Date(row.movements[0].occurredAt).getTime()).toBeLessThan(
+        new Date(row.movements[1].occurredAt).getTime()
+      );
+    });
   });
 
   describe("getDailyReport / getMonthlyReport / getAnnualReport", () => {

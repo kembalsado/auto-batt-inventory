@@ -35,3 +35,21 @@ export function manilaToday(now: Date = new Date()): string {
     now
   );
 }
+
+/**
+ * A timestamp (e.g. `stock_movements.created_at`) as a 12-hour Asia/Manila
+ * clock time — `"4:02 AM"` — for display next to an individual movement,
+ * same time zone every other "what day/time is it" decision in this app
+ * uses (see `SHOP_TIME_ZONE`'s own docstring). Takes an ISO string (what
+ * Postgres/PostgREST hands back for a `timestamptz` column) rather than a
+ * `Date`, so a caller can pass a row's `created_at` straight through
+ * without constructing one first.
+ */
+export function manilaTime(isoTimestamp: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: SHOP_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoTimestamp));
+}
