@@ -410,6 +410,77 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
       expect(row.qtyIn).toBe(2);
       expect(row.costIn).toBe(100);
     });
+
+    test(
+      "per-item cost sums equal getPurchasesByDate/getStockOutValueByDate's totals for the same date (Finding 1 regression)",
+      async () => {
+        // Locks in the sum-equality invariant the Finding-1 paging fix
+        // protects: getItemActivityByDate's per-item costIn/costOut must
+        // always roll up to the exact same single-day totals
+        // getPurchasesByDate/getStockOutValueByDate compute independently,
+        // across two or more items on one date, each with both an IN and
+        // an OUT movement.
+        const runId = randomUUID().slice(0, 8);
+        const date = "2026-11-24";
+
+        const categoryA = await createCategory(admin, OWNER_ID, `ItemActivity-SumA-${runId}`);
+        createdCategoryIds.push(categoryA.id);
+        const itemA = await createItem(admin, OWNER_ID, {
+          sku: `IA-SUM-A-${runId}`,
+          name: "Item Activity Sum Test A",
+          categoryId: categoryA.id,
+          unit: "pcs",
+        });
+        createdItemIds.push(itemA.id);
+
+        const categoryB = await createCategory(admin, OWNER_ID, `ItemActivity-SumB-${runId}`);
+        createdCategoryIds.push(categoryB.id);
+        const itemB = await createItem(admin, OWNER_ID, {
+          sku: `IA-SUM-B-${runId}`,
+          name: "Item Activity Sum Test B",
+          categoryId: categoryB.id,
+          unit: "pcs",
+        });
+        createdItemIds.push(itemB.id);
+
+        await recordStockIn(admin, OWNER_ID, {
+          itemId: itemA.id,
+          qty: 6,
+          unitCost: 50,
+          batchDate: date,
+        });
+        await recordStockIn(admin, OWNER_ID, {
+          itemId: itemB.id,
+          qty: 4,
+          unitCost: 25,
+          batchDate: date,
+        });
+        await recordStockOut(admin, OWNER_ID, {
+          itemId: itemA.id,
+          qty: 2,
+          movementDate: date,
+        });
+        await recordStockOut(admin, OWNER_ID, {
+          itemId: itemB.id,
+          qty: 1,
+          movementDate: date,
+        });
+
+        const [itemActivity, purchasesByDate, stockOutByDate] = await Promise.all([
+          getItemActivityByDate(ownerClient, admin, date),
+          getPurchasesByDate(ownerClient, date, date),
+          getStockOutValueByDate(admin, date, date),
+        ]);
+
+        const costInSum = itemActivity.reduce((sum, r) => sum + r.costIn, 0);
+        const costOutSum = itemActivity.reduce((sum, r) => sum + r.costOut, 0);
+
+        expect(costInSum).toBeGreaterThan(0);
+        expect(costOutSum).toBeGreaterThan(0);
+        expect(costInSum).toBe(purchasesByDate.get(date) ?? 0);
+        expect(costOutSum).toBe(stockOutByDate.get(date) ?? 0);
+      }
+    );
   });
 
   describe("getDailyReport / getMonthlyReport / getAnnualReport", () => {

@@ -317,6 +317,19 @@ interface ItemActivityItemRow {
   car_makes: { name: string } | null;
 }
 
+/**
+ * Same `items` row PostgREST actually returns, except `car_makes` typed as
+ * the array shape the untyped Supabase client infers for a joined relation
+ * (it can't tell `items -> car_makes` is a to-one join without generated
+ * Database types) — only used to keep `fetchAllForIds`'s generic honest
+ * about the query's real shape; cast to `ItemActivityItemRow[]` afterward,
+ * same as the rest of this file does for `batches_for_viewer`/
+ * `movement_allocations` rows that don't need this distinction.
+ */
+interface ItemActivityItemQueryRow extends Omit<ItemActivityItemRow, "car_makes"> {
+  car_makes: { name: string }[] | null;
+}
+
 /** One item's movement/cost totals for a single calendar day. */
 export interface ItemActivity {
   itemId: string;
@@ -337,12 +350,19 @@ export interface ItemActivity {
  * movement that day, and each one's IN/OUT quantity and cost, kept
  * separate (an item can be both received and sold on the same day).
  *
- * Single-day, unpaged queries throughout — this follows `lib/email/
- * dailySummary.ts`'s `buildDailySummary` precedent, not `getPurchasesByDate`/
- * `getStockOutValueByDate`'s `fetchAllPages`/`fetchAllForIds` paging, since
- * a single day's row count doesn't approach PostgREST's 1000-row cap at
- * this app's scale (that paging exists for date-*range* queries spanning a
- * month or a year).
+ * All four bulk reads below are paged/chunked via `fetchAllPages`/
+ * `fetchAllForIds`, the same way `getPurchasesByDate`/
+ * `getStockOutValueByDate` already page their equivalent reads — this does
+ * *not* follow `lib/email/dailySummary.ts`'s `buildDailySummary` precedent
+ * of a single unpaged query per table, because that reasoning doesn't
+ * cover this function's `movement_allocations` read: unlike
+ * `buildDailySummary`'s plain movements-only read, a single day's OUT
+ * movements can each fan out into many allocation rows under multi-batch
+ * FIFO draws, so even one day's worth can exceed PostgREST's 1000-row cap
+ * or (via the distinct id list behind the `.in(...)`) its URL-length
+ * limit. The range functions above need this paging for the same reason;
+ * this function needs it for the same reason on a smaller, but not
+ * negligibly smaller, scale.
  *
  * Same two-step, application-joined shape as the two range functions
  * above, run for IN and OUT separately since they read different cost
@@ -392,17 +412,16 @@ export async function getItemActivityByDate(
   adminSupabase: SupabaseClient,
   date: string
 ): Promise<ItemActivity[]> {
-  const { data: movementData, error: movementError } = await supabase
-    .from("stock_movements")
-    .select("id, item_id, type, quantity, batch_id")
-    .eq("movement_date", date)
-    .is("voided_at", null);
+  const movements = await fetchAllPages<DayMovementRow>((offset) =>
+    supabase
+      .from("stock_movements")
+      .select("id, item_id, type, quantity, batch_id")
+      .eq("movement_date", date)
+      .is("voided_at", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+  );
 
-  if (movementError) {
-    throw movementError;
-  }
-
-  const movements = (movementData ?? []) as DayMovementRow[];
   if (movements.length === 0) {
     return [];
   }
@@ -419,16 +438,18 @@ export async function getItemActivityByDate(
 
     const batchById = new Map<string, DayViewerBatchRow>();
     if (batchIds.length > 0) {
-      const { data: batchData, error: batchError } = await supabase
-        .from("batches_for_viewer")
-        .select("id, unit_cost, source")
-        .in("id", batchIds);
+      const batchRows = await fetchAllForIds<DayViewerBatchRow>(
+        batchIds,
+        (idChunk, offset) =>
+          supabase
+            .from("batches_for_viewer")
+            .select("id, unit_cost, source")
+            .in("id", idChunk)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+      );
 
-      if (batchError) {
-        throw batchError;
-      }
-
-      for (const batch of (batchData ?? []) as DayViewerBatchRow[]) {
+      for (const batch of batchRows) {
         batchById.set(batch.id, batch);
       }
     }
@@ -461,16 +482,18 @@ export async function getItemActivityByDate(
     }
 
     const movementIds = outMovements.map((m) => m.id);
-    const { data: allocationData, error: allocationError } = await adminSupabase
-      .from("movement_allocations")
-      .select("movement_id, qty_allocated, unit_cost_at_allocation")
-      .in("movement_id", movementIds);
+    const allocationRows = await fetchAllForIds<DayAllocationRow>(
+      movementIds,
+      (idChunk, offset) =>
+        adminSupabase
+          .from("movement_allocations")
+          .select("movement_id, qty_allocated, unit_cost_at_allocation")
+          .in("movement_id", idChunk)
+          .order("id", { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1)
+    );
 
-    if (allocationError) {
-      throw allocationError;
-    }
-
-    for (const allocation of (allocationData ?? []) as DayAllocationRow[]) {
+    for (const allocation of allocationRows) {
       const itemId = itemIdByMovementId.get(allocation.movement_id);
       if (!itemId) {
         continue;
@@ -487,16 +510,18 @@ export async function getItemActivityByDate(
     return [];
   }
 
-  const { data: itemData, error: itemsError } = await supabase
-    .from("items")
-    .select("id, sku, name, unit, model, variant, year, car_makes(name)")
-    .in("id", itemIds);
+  const itemRows = await fetchAllForIds<ItemActivityItemQueryRow>(
+    itemIds,
+    (idChunk, offset) =>
+      supabase
+        .from("items")
+        .select("id, sku, name, unit, model, variant, year, car_makes(name)")
+        .in("id", idChunk)
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+  );
 
-  if (itemsError) {
-    throw itemsError;
-  }
-
-  const items = (itemData ?? []) as unknown as ItemActivityItemRow[];
+  const items = itemRows as unknown as ItemActivityItemRow[];
 
   const activity: ItemActivity[] = items.map((item) => ({
     itemId: item.id,
