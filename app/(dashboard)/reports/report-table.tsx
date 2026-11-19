@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { PendingLabel } from "./pending-indicators";
 
 export interface ReportTableRow {
   label: string;
@@ -59,17 +60,26 @@ export function ReportTable({
                 // margin so it doesn't grow the row) fills the whole cell
                 // rather than just the 1-2 digit label, so the tap target
                 // is meaningfully bigger than the glyph on mobile. The
-                // ChevronRight is a persistent (non-hover-dependent) cue
-                // that this is a drill-down link — kept at
-                // `text-muted-foreground` regardless of `isCurrent` so a
-                // "today" row's green/bold styling never gets mistaken for
-                // this affordance, and a non-today row never looks
-                // unclickable for lacking it.
+                // visible border + persistent (non-hover) underline +
+                // ChevronRight are all cues that don't depend on hover
+                // (useless on touch) and don't reuse `text-brand-green` —
+                // this theme's `--accent`/`--muted` tokens are both
+                // near-white, too low-contrast for a background tint alone
+                // to read as "clickable," and `text-brand-green` is already
+                // `isCurrent`'s "today" signal, so borrowing it here would
+                // make a non-today linked day look like today and vice
+                // versa. `has-[[data-pending=true]]:*` reacts to
+                // `PendingLabel`'s own `data-pending` attribute (set via
+                // `useLinkStatus`, see pending-indicators.tsx) purely in
+                // CSS: once a click sends this link's navigation in
+                // flight, the whole link becomes unclickable and dims
+                // until it resolves, so a second click on the same day
+                // can't stack a second navigation.
                 <Link
                   href={row.href}
-                  className="-mx-1 -my-2 flex items-center gap-0.5 px-1 py-2 hover:underline"
+                  className="-mx-1 -my-2 flex items-center gap-1 rounded-md border border-border px-1.5 py-2 underline decoration-muted-foreground/50 underline-offset-2 hover:bg-accent hover:decoration-foreground has-[[data-pending=true]]:pointer-events-none has-[[data-pending=true]]:opacity-60"
                 >
-                  {row.label}
+                  <PendingLabel>{row.label}</PendingLabel>
                   <ChevronRight className="size-3 text-muted-foreground" aria-hidden="true" />
                 </Link>
               ) : (

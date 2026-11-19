@@ -44,14 +44,27 @@ export function PendingIcon({
   );
 }
 
-/** Same idea as `PendingIcon`, for a text label (the Day/Month/Year tabs):
- * appends a small spinner next to the label while that tab's navigation is
- * in flight, rather than replacing the label outright — the tab stays
- * readable the whole time. */
+/**
+ * Same idea as `PendingIcon`, for a text label (the Day/Month/Year tabs,
+ * and the Month view's per-day drill-down links): appends a small spinner
+ * next to the label while that link's navigation is in flight, rather than
+ * replacing the label outright — the label stays readable the whole time.
+ *
+ * Also carries `data-pending` on its own wrapper, so an ancestor `<Link>`
+ * can react to it purely in CSS (`has-[[data-pending=true]]:...`) without
+ * any extra client state of its own — the day-row links in `report-table.tsx`
+ * use this to block (`pointer-events-none`) a second click on the same link
+ * while the first is still in flight, so a rapid double-click can't stack a
+ * second navigation. Harmless on every other `PendingLabel` use (the tabs),
+ * which just don't set that CSS variant.
+ */
 export function PendingLabel({ children }: { children: React.ReactNode }) {
   const { pending } = useLinkStatus();
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span
+      data-pending={pending ? "true" : undefined}
+      className="inline-flex items-center gap-1.5"
+    >
       {children}
       {pending && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
     </span>
