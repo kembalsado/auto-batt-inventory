@@ -8,7 +8,7 @@ import type { ItemActivity } from "@/lib/reports";
  * Layout follows Calendar's day-modal per-item rows and Stock List's
  * vehicle display.
  */
-export function ItemActivityList({ items }: { items: ItemActivity[] }): JSX.Element {
+export function ItemActivityList({ items }: { items: ItemActivity[] }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">No activity this day.</p>;
   }
