@@ -282,6 +282,241 @@ export async function getStockOutValueByDate(
   return totalsByDate;
 }
 
+/** Row shape read from the single-day `stock_movements` query below. */
+interface DayMovementRow {
+  id: string;
+  item_id: string;
+  type: "IN" | "OUT";
+  quantity: number;
+  batch_id: string | null;
+}
+
+/** Row shape read from the `batches_for_viewer` lookup below (IN side). */
+interface DayViewerBatchRow {
+  id: string;
+  unit_cost: number | null;
+  source: "purchase" | "opening_stock";
+}
+
+/** Row shape read from the `movement_allocations` lookup below (OUT side). */
+interface DayAllocationRow {
+  movement_id: string;
+  qty_allocated: number;
+  unit_cost_at_allocation: number;
+}
+
+/** Row shape read from the bulk `items` lookup below. */
+interface ItemActivityItemRow {
+  id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  model: string | null;
+  variant: string | null;
+  year: number | null;
+  car_makes: { name: string } | null;
+}
+
+/** One item's movement/cost totals for a single calendar day. */
+export interface ItemActivity {
+  itemId: string;
+  sku: string;
+  name: string;
+  /** "Make Model Variant Year", skipping unset parts — "—" when none are set. */
+  vehicle: string;
+  unit: string;
+  qtyIn: number;
+  qtyOut: number;
+  costIn: number;
+  costOut: number;
+}
+
+/**
+ * Breaks `getPurchasesByDate`/`getStockOutValueByDate`'s all-items totals
+ * down per item for one calendar `date`: which items had any non-voided
+ * movement that day, and each one's IN/OUT quantity and cost, kept
+ * separate (an item can be both received and sold on the same day).
+ *
+ * Single-day, unpaged queries throughout — this follows `lib/email/
+ * dailySummary.ts`'s `buildDailySummary` precedent, not `getPurchasesByDate`/
+ * `getStockOutValueByDate`'s `fetchAllPages`/`fetchAllForIds` paging, since
+ * a single day's row count doesn't approach PostgREST's 1000-row cap at
+ * this app's scale (that paging exists for date-*range* queries spanning a
+ * month or a year).
+ *
+ * Same two-step, application-joined shape as the two range functions
+ * above, run for IN and OUT separately since they read different cost
+ * sources:
+ * - IN: every non-voided IN movement on `date`, then — by the distinct
+ *   `batch_id`s collected from them — those batches via
+ *   `batches_for_viewer` (not raw `batches`), read with `supabase` so
+ *   `unit_cost` resolves against the caller's own session the same way
+ *   `getPurchasesByDate` does. `qtyIn` accumulates every IN movement's
+ *   quantity unconditionally; `costIn` only adds a batch's
+ *   `quantity * unit_cost` when `source === "purchase"` and `unit_cost`
+ *   is non-null — an opening-stock import (`lib/import.ts`) still shows
+ *   its quantity, just with zero cost, mirroring `getPurchasesByDate`'s
+ *   purchase-only cost rule without dropping the row entirely.
+ * - OUT: every non-voided OUT movement on `date`, then — by their ids —
+ *   the `movement_allocations` rows they produced, read with
+ *   `adminSupabase` (the only client with any readable path to that
+ *   table — see `getStockOutValueByDate`). `qtyOut` accumulates every OUT
+ *   movement's quantity unconditionally; `costOut` sums
+ *   `qty_allocated * unit_cost_at_allocation` per the allocation's parent
+ *   movement's `item_id`. Voided-OUT exclusion happens at the
+ *   `stock_movements` step (`voided_at is null`), the same
+ *   join-through-the-movement reasoning `getStockOutValueByDate`'s
+ *   docstring explains in full.
+ *
+ * `supabase` must be a client with a real signed-in session (the
+ * `batches_for_viewer` cost gate resolves against `auth.uid()`, which is
+ * always null for the service-role client — see `getPurchasesByDate`).
+ * `adminSupabase` must be the service-role client (the only readable path
+ * to `movement_allocations`).
+ *
+ * Deliberately does not filter the final `items` lookup by
+ * `is_active = true`: a deactivated item that moved stock on `date` still
+ * has a real transaction worth showing in the breakdown — unlike the
+ * Stock List (lib/stock-list.ts), which is a "what's on the shelves right
+ * now" view, this is a historical record of what happened on a given day.
+ *
+ * Returns `[]` (never throws) when no item has any qualifying movement on
+ * `date` — the same "no entry means nothing happened" convention every
+ * other function in this file uses, just as an array instead of a map
+ * since the caller always wants every item's row, not a lookup by date.
+ * Sorted by `name`, matching `lib/stock-list.ts`'s `.order("name")`
+ * convention for item listings.
+ */
+export async function getItemActivityByDate(
+  supabase: SupabaseClient,
+  adminSupabase: SupabaseClient,
+  date: string
+): Promise<ItemActivity[]> {
+  const { data: movementData, error: movementError } = await supabase
+    .from("stock_movements")
+    .select("id, item_id, type, quantity, batch_id")
+    .eq("movement_date", date)
+    .is("voided_at", null);
+
+  if (movementError) {
+    throw movementError;
+  }
+
+  const movements = (movementData ?? []) as DayMovementRow[];
+  if (movements.length === 0) {
+    return [];
+  }
+
+  const inMovements = movements.filter((m) => m.type === "IN");
+  const outMovements = movements.filter((m) => m.type === "OUT");
+
+  const qtyInByItemId = new Map<string, number>();
+  const costInByItemId = new Map<string, number>();
+  if (inMovements.length > 0) {
+    const batchIds = Array.from(
+      new Set(inMovements.map((m) => m.batch_id).filter((id): id is string => id != null))
+    );
+
+    const batchById = new Map<string, DayViewerBatchRow>();
+    if (batchIds.length > 0) {
+      const { data: batchData, error: batchError } = await supabase
+        .from("batches_for_viewer")
+        .select("id, unit_cost, source")
+        .in("id", batchIds);
+
+      if (batchError) {
+        throw batchError;
+      }
+
+      for (const batch of (batchData ?? []) as DayViewerBatchRow[]) {
+        batchById.set(batch.id, batch);
+      }
+    }
+
+    for (const movement of inMovements) {
+      qtyInByItemId.set(
+        movement.item_id,
+        (qtyInByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
+      );
+
+      const batch = movement.batch_id ? batchById.get(movement.batch_id) : undefined;
+      if (!batch || batch.source !== "purchase" || batch.unit_cost == null) {
+        continue;
+      }
+      const cost = Number(movement.quantity) * Number(batch.unit_cost);
+      costInByItemId.set(movement.item_id, (costInByItemId.get(movement.item_id) ?? 0) + cost);
+    }
+  }
+
+  const qtyOutByItemId = new Map<string, number>();
+  const costOutByItemId = new Map<string, number>();
+  if (outMovements.length > 0) {
+    const itemIdByMovementId = new Map<string, string>();
+    for (const movement of outMovements) {
+      itemIdByMovementId.set(movement.id, movement.item_id);
+      qtyOutByItemId.set(
+        movement.item_id,
+        (qtyOutByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
+      );
+    }
+
+    const movementIds = outMovements.map((m) => m.id);
+    const { data: allocationData, error: allocationError } = await adminSupabase
+      .from("movement_allocations")
+      .select("movement_id, qty_allocated, unit_cost_at_allocation")
+      .in("movement_id", movementIds);
+
+    if (allocationError) {
+      throw allocationError;
+    }
+
+    for (const allocation of (allocationData ?? []) as DayAllocationRow[]) {
+      const itemId = itemIdByMovementId.get(allocation.movement_id);
+      if (!itemId) {
+        continue;
+      }
+      const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
+      costOutByItemId.set(itemId, (costOutByItemId.get(itemId) ?? 0) + cost);
+    }
+  }
+
+  const itemIds = Array.from(
+    new Set([...qtyInByItemId.keys(), ...qtyOutByItemId.keys()])
+  );
+  if (itemIds.length === 0) {
+    return [];
+  }
+
+  const { data: itemData, error: itemsError } = await supabase
+    .from("items")
+    .select("id, sku, name, unit, model, variant, year, car_makes(name)")
+    .in("id", itemIds);
+
+  if (itemsError) {
+    throw itemsError;
+  }
+
+  const items = (itemData ?? []) as unknown as ItemActivityItemRow[];
+
+  const activity: ItemActivity[] = items.map((item) => ({
+    itemId: item.id,
+    sku: item.sku,
+    name: item.name,
+    vehicle:
+      [item.car_makes?.name, item.model, item.variant, item.year]
+        .filter(Boolean)
+        .join(" ") || "—",
+    unit: item.unit,
+    qtyIn: qtyInByItemId.get(item.id) ?? 0,
+    qtyOut: qtyOutByItemId.get(item.id) ?? 0,
+    costIn: costInByItemId.get(item.id) ?? 0,
+    costOut: costOutByItemId.get(item.id) ?? 0,
+  }));
+
+  activity.sort((a, b) => a.name.localeCompare(b.name));
+  return activity;
+}
+
 /** Shared Purchases/Stock-out-value pair every report shape rolls up from. */
 export interface AmountTotals {
   purchases: number;

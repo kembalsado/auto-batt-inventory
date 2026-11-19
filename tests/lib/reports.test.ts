@@ -10,6 +10,7 @@ import {
   getDailyReport,
   getMonthlyReport,
   getAnnualReport,
+  getItemActivityByDate,
 } from "@/lib/reports";
 
 // Plain anon-key client used to sign in as a real user and exercise RLS /
@@ -296,6 +297,119 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
     const stockOut = await getStockOutValueByDate(admin, "2099-01-01", "2099-01-31");
     expect(purchases.size).toBe(0);
     expect(stockOut.size).toBe(0);
+  });
+
+  describe("getItemActivityByDate", () => {
+    test("reports qty and cost per item, separating IN and OUT on the same date", async () => {
+      const runId = randomUUID().slice(0, 8);
+      const category = await createCategory(admin, OWNER_ID, `ItemActivity-${runId}`);
+      createdCategoryIds.push(category.id);
+      const item = await createItem(admin, OWNER_ID, {
+        sku: `IA-${runId}`,
+        name: "Item Activity Test Item",
+        categoryId: category.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(item.id);
+
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: item.id,
+        qty: 10,
+        unitCost: 100,
+        batchDate: "2026-11-20",
+      });
+      await recordStockOut(admin, OWNER_ID, {
+        itemId: item.id,
+        qty: 3,
+        movementDate: "2026-11-20",
+      });
+
+      const result = await getItemActivityByDate(ownerClient, admin, "2026-11-20");
+      const row = result.find((r) => r.itemId === item.id)!;
+      expect(row.qtyIn).toBe(10);
+      expect(row.costIn).toBe(1000);
+      expect(row.qtyOut).toBe(3);
+      expect(row.costOut).toBe(300); // FIFO: 3 * 100
+      expect(row.name).toBe("Item Activity Test Item");
+      expect(row.sku).toBe(`IA-${runId}`);
+    });
+
+    test("a day with no qualifying movement returns an empty array", async () => {
+      const result = await getItemActivityByDate(ownerClient, admin, "2020-01-01");
+      expect(result).toEqual([]);
+    });
+
+    test("a voided movement contributes nothing", async () => {
+      const { movementId } = await recordStockIn(admin, OWNER_ID, {
+        itemId,
+        qty: 7,
+        unitCost: 10,
+        batchDate: "2026-11-21",
+      });
+      await voidMovement(admin, OWNER_ID, movementId);
+
+      const result = await getItemActivityByDate(ownerClient, admin, "2026-11-21");
+      expect(result.find((r) => r.itemId === itemId)).toBeUndefined();
+    });
+
+    test("an opening-stock import shows qty with zero cost, not excluded", async () => {
+      const openingStockDate = "2026-11-22";
+      const { data: batch, error: batchError } = await admin
+        .from("batches")
+        .insert({
+          item_id: itemId,
+          batch_date: openingStockDate,
+          qty_received: 5,
+          qty_remaining: 5,
+          unit_cost: 77,
+          source: "opening_stock",
+          created_by: OWNER_ID,
+        })
+        .select("id")
+        .single();
+      if (batchError) throw batchError;
+
+      const { error: movementError } = await admin.from("stock_movements").insert({
+        item_id: itemId,
+        type: "IN",
+        quantity: 5,
+        batch_id: batch.id,
+        movement_date: openingStockDate,
+        created_by: OWNER_ID,
+      });
+      if (movementError) throw movementError;
+
+      const result = await getItemActivityByDate(ownerClient, admin, openingStockDate);
+      const row = result.find((r) => r.itemId === itemId)!;
+      expect(row.qtyIn).toBe(5);
+      expect(row.costIn).toBe(0);
+    });
+
+    test("a deactivated item that moved stock still appears", async () => {
+      const runId = randomUUID().slice(0, 8);
+      const category = await createCategory(admin, OWNER_ID, `ItemActivity-Deact-${runId}`);
+      createdCategoryIds.push(category.id);
+      const item = await createItem(admin, OWNER_ID, {
+        sku: `IA-DEACT-${runId}`,
+        name: "Deactivated Item",
+        categoryId: category.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(item.id);
+
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: item.id,
+        qty: 2,
+        unitCost: 50,
+        batchDate: "2026-11-23",
+      });
+      await admin.from("items").update({ is_active: false }).eq("id", item.id);
+
+      const result = await getItemActivityByDate(ownerClient, admin, "2026-11-23");
+      const row = result.find((r) => r.itemId === item.id)!;
+      expect(row.qtyIn).toBe(2);
+      expect(row.costIn).toBe(100);
+    });
   });
 
   describe("getDailyReport / getMonthlyReport / getAnnualReport", () => {
