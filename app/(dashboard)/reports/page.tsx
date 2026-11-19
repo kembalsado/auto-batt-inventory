@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowDownToLine, ArrowUpFromLine, X } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRole, canSeeCost } from "@/lib/permissions";
@@ -182,6 +182,7 @@ export default async function ReportsPage({
       isCurrent: d.date === today,
       purchases: d.purchases,
       stockOutValue: d.stockOutValue,
+      href: `${monthHref(year, month)}&date=${d.date}`,
     }));
     const prev = shiftMonth(year, month, -1);
     const next = shiftMonth(year, month, 1);
@@ -205,6 +206,15 @@ export default async function ReportsPage({
     prevLabel = "Previous year";
     nextLabel = "Next year";
   }
+
+  // Month view's per-day drill-down modal — URL-driven (`?date=`) exactly
+  // like Calendar's own day modal (app/(dashboard)/calendar/page.tsx:72-75):
+  // only fetched when a `date` param names a day inside the viewed month,
+  // so navigating Month view normally never pays for this extra query.
+  const monthDayActivity: ItemActivity[] | null =
+    view === "month" && dateParam && dateParam.startsWith(`${year}-${pad2(month)}`)
+      ? await getItemActivityByDate(supabase, adminSupabase, dateParam)
+      : null;
 
   return (
     <div>
@@ -353,6 +363,26 @@ export default async function ReportsPage({
           </div>
         )}
       </div>
+
+      {monthDayActivity && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-card shadow-2xl">
+            <div className="flex items-center justify-between bg-brand-green px-4 py-3 text-white">
+              <h2 className="text-sm font-extrabold">Activity — {dateParam}</h2>
+              <Link
+                href={monthHref(year, month)}
+                aria-label="Close"
+                className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-white/20"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-4">
+              <ItemActivityList items={monthDayActivity} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatCurrency } from "@/lib/format";
 
 export interface ReportTableRow {
@@ -5,6 +6,15 @@ export interface ReportTableRow {
   isCurrent?: boolean;
   purchases: number;
   stockOutValue: number;
+  /**
+   * When set, `label` renders as a link to this href (Month view's day
+   * rows, linking to that day's per-item drill-down modal). Left unset by
+   * Year view's rows, which keep rendering as plain text — this component
+   * has no idea what period it's showing, so it can't build the URL
+   * itself; the caller (app/(dashboard)/reports/page.tsx) always passes a
+   * ready-made href instead.
+   */
+  href?: string;
 }
 
 /**
@@ -49,7 +59,13 @@ export function ReportTable({
                   : "py-2"
               }
             >
-              {row.label}
+              {row.href ? (
+                <Link href={row.href} className="hover:underline">
+                  {row.label}
+                </Link>
+              ) : (
+                row.label
+              )}
             </td>
             <td className="py-2">{formatCurrency(row.purchases)}</td>
             <td className="py-2">{formatCurrency(row.stockOutValue)}</td>

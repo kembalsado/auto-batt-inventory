@@ -172,4 +172,53 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
     expect(body).not.toContain("12345");
     expect(body).not.toContain("12,345.00");
   });
+
+  test("an owner can click a Month-view day to see that day's per-item list", async () => {
+    const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+    const [year, month] = today.split("-");
+    const res = await fetch(
+      `${BASE_URL}/reports?view=month&year=${year}&month=${Number(month)}&date=${today}`,
+      { headers: { Cookie: cookie } }
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("Reports Gating Test Item");
+    expect(body).toContain("12,345.00");
+  });
+
+  test("a Month-view day with zero cost (opening stock) is still a clickable link", async () => {
+    // Opening-stock import: zero Purchases-tile cost, but a real movement —
+    // the day's table-row link must still be present and reachable.
+    const openingStockDate = today;
+    const { data: batch } = await createAdminClient()
+      .from("batches")
+      .insert({
+        item_id: createdItemIds[0],
+        batch_date: openingStockDate,
+        qty_received: 1,
+        qty_remaining: 1,
+        unit_cost: 1,
+        source: "opening_stock",
+        created_by: OWNER_ID,
+      })
+      .select("id")
+      .single();
+    await createAdminClient().from("stock_movements").insert({
+      item_id: createdItemIds[0],
+      type: "IN",
+      quantity: 1,
+      batch_id: batch!.id,
+      movement_date: openingStockDate,
+      created_by: OWNER_ID,
+    });
+
+    const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+    const [year, month] = today.split("-");
+    const monthRes = await fetch(
+      `${BASE_URL}/reports?view=month&year=${year}&month=${Number(month)}`,
+      { headers: { Cookie: cookie } }
+    );
+    const monthBody = await monthRes.text();
+    expect(monthBody).toContain(`date=${openingStockDate}`);
+  });
 });
