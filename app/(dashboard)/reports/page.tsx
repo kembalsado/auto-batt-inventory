@@ -156,6 +156,7 @@ export default async function ReportsPage({
   let stockOutValue = 0;
   let tableRows: ReportTableRow[] = [];
   let itemActivity: ItemActivity[] = [];
+  let monthDayActivity: ItemActivity[] | null = null;
   let periodLabel = "";
   let prevHref = "";
   let nextHref = "";
@@ -177,9 +178,27 @@ export default async function ReportsPage({
     prevLabel = "Previous day";
     nextLabel = "Next day";
   } else if (view === "month") {
-    const report = await getMonthlyReport(supabase, adminSupabase, year, month);
+    // The per-day drill-down modal (`?date=`, same URL-driven pattern as
+    // Calendar's own day modal) is independent of the month's totals, so
+    // it's fetched in the same `Promise.all` as `getMonthlyReport` rather
+    // than awaited afterward — halving the round-trip latency a day click
+    // used to pay serially for no reason. Only fetched when a `date` param
+    // names a day inside the viewed month, so navigating Month view
+    // normally never pays for this extra query at all.
+    const shouldFetchDayActivity =
+      dateParam &&
+      /^\d{4}-\d{2}-\d{2}$/.test(dateParam) &&
+      dateParam.startsWith(`${year}-${pad2(month)}`);
+
+    const [report, dayActivity] = await Promise.all([
+      getMonthlyReport(supabase, adminSupabase, year, month),
+      shouldFetchDayActivity
+        ? getItemActivityByDate(supabase, adminSupabase, dateParam)
+        : Promise.resolve(null),
+    ]);
     purchases = report.purchases;
     stockOutValue = report.stockOutValue;
+    monthDayActivity = dayActivity;
     periodLabel = `${MONTH_NAMES[month - 1]} ${year}`;
     tableRows = report.days.map((d) => ({
       label: String(Number(d.date.slice(8, 10))),
@@ -210,18 +229,6 @@ export default async function ReportsPage({
     prevLabel = "Previous year";
     nextLabel = "Next year";
   }
-
-  // Month view's per-day drill-down modal — URL-driven (`?date=`) exactly
-  // like Calendar's own day modal (app/(dashboard)/calendar/page.tsx:72-75):
-  // only fetched when a `date` param names a day inside the viewed month,
-  // so navigating Month view normally never pays for this extra query.
-  const monthDayActivity: ItemActivity[] | null =
-    view === "month" &&
-    dateParam &&
-    /^\d{4}-\d{2}-\d{2}$/.test(dateParam) &&
-    dateParam.startsWith(`${year}-${pad2(month)}`)
-      ? await getItemActivityByDate(supabase, adminSupabase, dateParam)
-      : null;
 
   return (
     <div>

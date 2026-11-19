@@ -365,8 +365,9 @@ export interface ItemActivity {
  * negligibly smaller, scale.
  *
  * Same two-step, application-joined shape as the two range functions
- * above, run for IN and OUT separately since they read different cost
- * sources:
+ * above. The IN and OUT lookups read different cost sources via different
+ * clients and don't depend on each other, so they run in one `Promise.all`
+ * rather than one after the other:
  * - IN: every non-voided IN movement on `date`, then — by the distinct
  *   `batch_id`s collected from them — those batches via
  *   `batches_for_viewer` (not raw `batches`), read with `supabase` so
@@ -429,78 +430,80 @@ export async function getItemActivityByDate(
   const inMovements = movements.filter((m) => m.type === "IN");
   const outMovements = movements.filter((m) => m.type === "OUT");
 
-  const qtyInByItemId = new Map<string, number>();
-  const costInByItemId = new Map<string, number>();
-  if (inMovements.length > 0) {
-    const batchIds = Array.from(
-      new Set(inMovements.map((m) => m.batch_id).filter((id): id is string => id != null))
-    );
+  // The IN side's batch-cost lookup and the OUT side's allocation-cost
+  // lookup read different tables via different clients and don't depend on
+  // each other — only on `movements` above — so they run in the same
+  // `Promise.all` instead of one being awaited after the other, cutting a
+  // full network round-trip off this function's latency on a day with both
+  // IN and OUT activity (the common case for a drill-down someone actually
+  // clicks into).
+  const batchIds = Array.from(
+    new Set(inMovements.map((m) => m.batch_id).filter((id): id is string => id != null))
+  );
+  const movementIds = outMovements.map((m) => m.id);
 
-    const batchById = new Map<string, DayViewerBatchRow>();
-    if (batchIds.length > 0) {
-      const batchRows = await fetchAllForIds<DayViewerBatchRow>(
-        batchIds,
-        (idChunk, offset) =>
+  const [batchRows, allocationRows] = await Promise.all([
+    batchIds.length > 0
+      ? fetchAllForIds<DayViewerBatchRow>(batchIds, (idChunk, offset) =>
           supabase
             .from("batches_for_viewer")
             .select("id, unit_cost, source")
             .in("id", idChunk)
             .order("id", { ascending: true })
             .range(offset, offset + PAGE_SIZE - 1)
-      );
+        )
+      : Promise.resolve([] as DayViewerBatchRow[]),
+    movementIds.length > 0
+      ? fetchAllForIds<DayAllocationRow>(movementIds, (idChunk, offset) =>
+          adminSupabase
+            .from("movement_allocations")
+            .select("movement_id, qty_allocated, unit_cost_at_allocation")
+            .in("movement_id", idChunk)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+        )
+      : Promise.resolve([] as DayAllocationRow[]),
+  ]);
 
-      for (const batch of batchRows) {
-        batchById.set(batch.id, batch);
-      }
-    }
-
-    for (const movement of inMovements) {
-      qtyInByItemId.set(
-        movement.item_id,
-        (qtyInByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
-      );
-
-      const batch = movement.batch_id ? batchById.get(movement.batch_id) : undefined;
-      if (!batch || batch.source !== "purchase" || batch.unit_cost == null) {
-        continue;
-      }
-      const cost = Number(movement.quantity) * Number(batch.unit_cost);
-      costInByItemId.set(movement.item_id, (costInByItemId.get(movement.item_id) ?? 0) + cost);
-    }
+  const batchById = new Map<string, DayViewerBatchRow>();
+  for (const batch of batchRows) {
+    batchById.set(batch.id, batch);
   }
 
-  const qtyOutByItemId = new Map<string, number>();
-  const costOutByItemId = new Map<string, number>();
-  if (outMovements.length > 0) {
-    const itemIdByMovementId = new Map<string, string>();
-    for (const movement of outMovements) {
-      itemIdByMovementId.set(movement.id, movement.item_id);
-      qtyOutByItemId.set(
-        movement.item_id,
-        (qtyOutByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
-      );
-    }
-
-    const movementIds = outMovements.map((m) => m.id);
-    const allocationRows = await fetchAllForIds<DayAllocationRow>(
-      movementIds,
-      (idChunk, offset) =>
-        adminSupabase
-          .from("movement_allocations")
-          .select("movement_id, qty_allocated, unit_cost_at_allocation")
-          .in("movement_id", idChunk)
-          .order("id", { ascending: true })
-          .range(offset, offset + PAGE_SIZE - 1)
+  const qtyInByItemId = new Map<string, number>();
+  const costInByItemId = new Map<string, number>();
+  for (const movement of inMovements) {
+    qtyInByItemId.set(
+      movement.item_id,
+      (qtyInByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
     );
 
-    for (const allocation of allocationRows) {
-      const itemId = itemIdByMovementId.get(allocation.movement_id);
-      if (!itemId) {
-        continue;
-      }
-      const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
-      costOutByItemId.set(itemId, (costOutByItemId.get(itemId) ?? 0) + cost);
+    const batch = movement.batch_id ? batchById.get(movement.batch_id) : undefined;
+    if (!batch || batch.source !== "purchase" || batch.unit_cost == null) {
+      continue;
     }
+    const cost = Number(movement.quantity) * Number(batch.unit_cost);
+    costInByItemId.set(movement.item_id, (costInByItemId.get(movement.item_id) ?? 0) + cost);
+  }
+
+  const itemIdByMovementId = new Map<string, string>();
+  const qtyOutByItemId = new Map<string, number>();
+  for (const movement of outMovements) {
+    itemIdByMovementId.set(movement.id, movement.item_id);
+    qtyOutByItemId.set(
+      movement.item_id,
+      (qtyOutByItemId.get(movement.item_id) ?? 0) + Number(movement.quantity)
+    );
+  }
+
+  const costOutByItemId = new Map<string, number>();
+  for (const allocation of allocationRows) {
+    const itemId = itemIdByMovementId.get(allocation.movement_id);
+    if (!itemId) {
+      continue;
+    }
+    const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
+    costOutByItemId.set(itemId, (costOutByItemId.get(itemId) ?? 0) + cost);
   }
 
   const itemIds = Array.from(
