@@ -67,7 +67,11 @@ function tabClass(active: boolean): string {
  * Month, and Year views over `lib/reports.ts`'s `getDailyReport`/
  * `getMonthlyReport`/`getAnnualReport`, each showing two stat numbers
  * (Purchases, Stock-out value) plus — for Month/Year — a `ReportTable`
- * breakdown.
+ * breakdown. Day view additionally shows an inline per-item activity list
+ * (`ItemActivityList`, fed by `getItemActivityByDate`) beneath the stat
+ * tiles; Month view's day-by-day table rows are each a link that opens a
+ * `?date=`-driven modal showing that same per-item list for the clicked
+ * day, mirroring Calendar's own URL-driven day modal.
  *
  * Gated by `canSeeCost` (lib/permissions.ts), re-checked here rather than
  * relying only on `isOwnerOnlyRoute` (lib/permissions.ts) — this route is
@@ -212,7 +216,10 @@ export default async function ReportsPage({
   // only fetched when a `date` param names a day inside the viewed month,
   // so navigating Month view normally never pays for this extra query.
   const monthDayActivity: ItemActivity[] | null =
-    view === "month" && dateParam && dateParam.startsWith(`${year}-${pad2(month)}`)
+    view === "month" &&
+    dateParam &&
+    /^\d{4}-\d{2}-\d{2}$/.test(dateParam) &&
+    dateParam.startsWith(`${year}-${pad2(month)}`)
       ? await getItemActivityByDate(supabase, adminSupabase, dateParam)
       : null;
 

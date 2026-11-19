@@ -173,6 +173,21 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
     expect(body).not.toContain("12,345.00");
   });
 
+  test("an assistant with cost hidden never sees the per-item list's cost in the Month-view modal", async () => {
+    const cookie = await signInCookieHeader(ASSISTANT_EMAIL, PASSWORD);
+    const [year, month] = today.split("-");
+    const res = await fetch(
+      `${BASE_URL}/reports?view=month&year=${year}&month=${Number(month)}&date=${today}`,
+      { headers: { Cookie: cookie } }
+    );
+    const body = await res.text();
+    expect(body).toContain(
+      "Ask the owner to turn on cost visibility in Settings to see this page."
+    );
+    expect(body).not.toContain("12345");
+    expect(body).not.toContain("12,345.00");
+  });
+
   test("an owner can click a Month-view day to see that day's per-item list", async () => {
     const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
     const [year, month] = today.split("-");

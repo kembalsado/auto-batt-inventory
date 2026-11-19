@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 
 export interface ReportTableRow {
@@ -52,19 +53,27 @@ export function ReportTable({
       <tbody className="divide-y divide-border">
         {rows.map((row) => (
           <tr key={row.label} className="text-brand-ink">
-            <td
-              className={
-                row.isCurrent
-                  ? "py-2 font-bold text-brand-green"
-                  : "py-2"
-              }
-            >
+            <td className={row.isCurrent ? "font-bold text-brand-green" : ""}>
               {row.href ? (
-                <Link href={row.href} className="hover:underline">
+                // The link's own padding (expanded with a matching negative
+                // margin so it doesn't grow the row) fills the whole cell
+                // rather than just the 1-2 digit label, so the tap target
+                // is meaningfully bigger than the glyph on mobile. The
+                // ChevronRight is a persistent (non-hover-dependent) cue
+                // that this is a drill-down link — kept at
+                // `text-muted-foreground` regardless of `isCurrent` so a
+                // "today" row's green/bold styling never gets mistaken for
+                // this affordance, and a non-today row never looks
+                // unclickable for lacking it.
+                <Link
+                  href={row.href}
+                  className="-mx-1 -my-2 flex items-center gap-0.5 px-1 py-2 hover:underline"
+                >
                   {row.label}
+                  <ChevronRight className="size-3 text-muted-foreground" aria-hidden="true" />
                 </Link>
               ) : (
-                row.label
+                <span className="block py-2">{row.label}</span>
               )}
             </td>
             <td className="py-2">{formatCurrency(row.purchases)}</td>
