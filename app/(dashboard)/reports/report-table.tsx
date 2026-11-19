@@ -56,11 +56,7 @@ export function ReportTable({
           <tr key={row.label} className="text-brand-ink">
             <td className={row.isCurrent ? "font-bold text-brand-green" : ""}>
               {row.href ? (
-                // The link's own padding (expanded with a matching negative
-                // margin so it doesn't grow the row) fills the whole cell
-                // rather than just the 1-2 digit label, so the tap target
-                // is meaningfully bigger than the glyph on mobile. The
-                // visible border + persistent (non-hover) underline +
+                // A visible border + persistent (non-hover) underline +
                 // ChevronRight are all cues that don't depend on hover
                 // (useless on touch) and don't reuse `text-brand-green` —
                 // this theme's `--accent`/`--muted` tokens are both
@@ -68,16 +64,27 @@ export function ReportTable({
                 // to read as "clickable," and `text-brand-green` is already
                 // `isCurrent`'s "today" signal, so borrowing it here would
                 // make a non-today linked day look like today and vice
-                // versa. `has-[[data-pending=true]]:*` reacts to
-                // `PendingLabel`'s own `data-pending` attribute (set via
-                // `useLinkStatus`, see pending-indicators.tsx) purely in
-                // CSS: once a click sends this link's navigation in
-                // flight, the whole link becomes unclickable and dims
-                // until it resolves, so a second click on the same day
-                // can't stack a second navigation.
+                // versa.
+                //
+                // No negative margin here (an earlier version used
+                // `-mx-1 -my-2` to expand the tap target without growing
+                // the row) — a *border* under negative margin draws
+                // outside the link's own box, spilling into the row above
+                // and below it (visible as a box straddling two rows,
+                // overlapping the Purchases column's text). Padding alone,
+                // with no negative margin, keeps the border inside this
+                // cell: still a meaningfully bigger tap target than the
+                // bare 1-2 digit glyph, just without the overflow bug.
+                // `has-[[data-pending=true]]:*` reacts to `PendingLabel`'s
+                // own `data-pending` attribute (set via `useLinkStatus`,
+                // see pending-indicators.tsx) purely in CSS: once a click
+                // sends this link's navigation in flight, the whole link
+                // becomes unclickable and dims until it resolves, so a
+                // second click on the same day can't stack a second
+                // navigation.
                 <Link
                   href={row.href}
-                  className="-mx-1 -my-2 flex items-center gap-1 rounded-md border border-border px-1.5 py-2 underline decoration-muted-foreground/50 underline-offset-2 hover:bg-accent hover:decoration-foreground has-[[data-pending=true]]:pointer-events-none has-[[data-pending=true]]:opacity-60"
+                  className="flex w-fit items-center gap-1 rounded-md border border-border px-1.5 py-1.5 underline decoration-muted-foreground/50 underline-offset-2 hover:bg-accent hover:decoration-foreground has-[[data-pending=true]]:pointer-events-none has-[[data-pending=true]]:opacity-60"
                 >
                   <PendingLabel>{row.label}</PendingLabel>
                   <ChevronRight className="size-3 text-muted-foreground" aria-hidden="true" />
