@@ -25,7 +25,7 @@ test("toggling the active key flips direction", () => {
 test("toggling a different key switches to that key ascending", () => {
   const rows = [{ name: "Bob", age: 30 }, { name: "Alice", age: 20 }];
   const { result } = renderHook(() =>
-    useSortableData(rows, {
+    useSortableData<{ name: string; age: number }, "name" | "age">(rows, {
       accessors: { name: (r) => r.name, age: (r) => r.age },
       defaultKey: "name",
     })
