@@ -3,8 +3,30 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { StockListRow } from "@/lib/stock-list";
 import { formatCurrency } from "@/lib/format";
+
+// Stable accessors object (module scope: none of these close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the sort
+// on every render — see Task 1's review note. Rows with no cost data (a
+// viewer without cost visibility, or an item with zero remaining batches)
+// sort predictably to the low end (-1 is never a real cost/value).
+const sortAccessors: Record<
+  "sku" | "name" | "category" | "vehicle" | "qtyOnHand" | "unit" | "cost" | "value",
+  (row: StockListRow) => string | number
+> = {
+  sku: (row) => row.sku,
+  name: (row) => row.name,
+  category: (row) => row.category,
+  vehicle: (row) => row.vehicle,
+  qtyOnHand: (row) => row.qtyOnHand,
+  unit: (row) => row.unit,
+  cost: (row) => row.unitCost ?? -1,
+  value: (row) => row.inventoryValue ?? -1,
+};
 
 /**
  * Client-side search for the Stock List, same reasoning as the Items
@@ -25,10 +47,12 @@ export function StockListTable({
   showCost: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 200);
+  const isPending = query !== debouncedQuery;
   const columnCount = showCost ? 8 : 6;
 
   const filteredRows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     if (!normalized) return rows;
     return rows.filter(
       (row) =>
@@ -37,7 +61,15 @@ export function StockListTable({
         row.category.toLowerCase().includes(normalized) ||
         row.vehicle.toLowerCase().includes(normalized)
     );
-  }, [rows, query]);
+  }, [rows, debouncedQuery]);
+
+  const { sorted, direction, sortKey, toggle } = useSortableData<
+    StockListRow,
+    keyof typeof sortAccessors
+  >(filteredRows, {
+    accessors: sortAccessors,
+    defaultKey: "name",
+  });
 
   return (
     <div>
@@ -62,23 +94,69 @@ export function StockListTable({
           print stylesheet only hides the sidebar/action bar, not this),
           since a printed page has the table's full width available
           regardless of screen size. */}
-      <table className="mt-6 hidden w-full text-left text-sm md:table print:table">
+      <table
+        className={`mt-6 hidden w-full text-left text-sm md:table print:table${
+          isPending ? " opacity-60 transition-opacity" : ""
+        }`}
+      >
         <thead>
           <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 font-medium">SKU</th>
-            <th className="py-2 font-medium">Name</th>
-            <th className="py-2 font-medium">Category</th>
-            <th className="py-2 font-medium">Vehicle</th>
-            <th className="py-2 font-medium">Qty on hand</th>
-            <th className="py-2 font-medium">Unit</th>
-            {showCost && <th className="py-2 font-medium">Unit cost</th>}
+            <SortButtonHeader
+              label="SKU"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "sku" ? direction : "none"}
+              onClick={() => toggle("sku")}
+            />
+            <SortButtonHeader
+              label="Name"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "name" ? direction : "none"}
+              onClick={() => toggle("name")}
+            />
+            <SortButtonHeader
+              label="Category"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "category" ? direction : "none"}
+              onClick={() => toggle("category")}
+            />
+            <SortButtonHeader
+              label="Vehicle"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "vehicle" ? direction : "none"}
+              onClick={() => toggle("vehicle")}
+            />
+            <SortButtonHeader
+              label="Qty on hand"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "qtyOnHand" ? direction : "none"}
+              onClick={() => toggle("qtyOnHand")}
+            />
+            <SortButtonHeader
+              label="Unit"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "unit" ? direction : "none"}
+              onClick={() => toggle("unit")}
+            />
             {showCost && (
-              <th className="py-2 font-medium">Inventory value</th>
+              <SortButtonHeader
+                label="Unit cost"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "cost" ? direction : "none"}
+                onClick={() => toggle("cost")}
+              />
+            )}
+            {showCost && (
+              <SortButtonHeader
+                label="Inventory value"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "value" ? direction : "none"}
+                onClick={() => toggle("value")}
+              />
             )}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {filteredRows.map((row) => (
+          {sorted.map((row) => (
             <tr key={row.sku} className="text-brand-ink transition-colors hover:bg-muted/40 print:hover:bg-transparent">
               <td className="py-2">{row.sku}</td>
               <td className="py-2">{row.name}</td>
@@ -115,13 +193,17 @@ export function StockListTable({
         </tbody>
       </table>
 
-      <div className="mt-4 flex flex-col gap-2 md:hidden print:hidden">
+      <div
+        className={`mt-4 flex flex-col gap-2 md:hidden print:hidden${
+          isPending ? " opacity-60 transition-opacity" : ""
+        }`}
+      >
         {filteredRows.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {rows.length === 0 ? "No active items." : "No items match your search."}
           </p>
         )}
-        {filteredRows.map((row) => (
+        {sorted.map((row) => (
           <div key={row.sku} className="rounded-lg border border-border bg-card p-3">
             <div className="flex items-center justify-between">
               <span className="font-medium text-brand-ink">{row.name}</span>
