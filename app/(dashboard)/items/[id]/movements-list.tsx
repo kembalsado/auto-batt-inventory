@@ -3,6 +3,9 @@
 import { useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 /** One row as rendered by this list — just what the table needs. */
 export interface MovementRow {
@@ -12,7 +15,32 @@ export interface MovementRow {
   movementDate: string;
   note: string | null;
   voidedAt: string | null;
+  createdAt: string;
 }
+
+// Stable accessors object (module scope: none of these close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the sort
+// on every render — see Task 1's review note / Task 4's BatchesTable.
+//
+// "date" is a composite string key, not a plain `movementDate` lookup:
+// `movement_date` has no time component, so `created_at` is the only thing
+// that orders two movements recorded on the same calendar day (see
+// lib/stock.ts's default query, which orders `movement_date desc,
+// created_at desc` for this exact reason — this feature must not regress
+// that). `movementDate` is always a fixed-width `YYYY-MM-DD` string, so
+// concatenating it with the `createdAt` ISO timestamp and comparing the
+// whole thing lexicographically sorts by date first and falls back to time
+// only when dates tie — one string accessor, no tuple/array comparator.
+const sortAccessors: Record<
+  "date" | "type" | "qty" | "note" | "status",
+  (row: MovementRow) => string | number
+> = {
+  date: (row) => `${row.movementDate}_${row.createdAt}`,
+  type: (row) => row.type,
+  qty: (row) => row.quantity,
+  note: (row) => row.note ?? "",
+  status: (row) => (row.voidedAt ? 1 : 0),
+};
 
 /** Result shape `voidAction` resolves to — an error message, or nothing on success. */
 export type VoidActionResult = { error?: string } | void;
@@ -39,9 +67,11 @@ export function MovementsList({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 200);
+  const isFiltering = query !== debouncedQuery;
 
   const filteredMovements = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     if (!normalized) return movements;
     return movements.filter(
       (m) =>
@@ -49,7 +79,16 @@ export function MovementsList({
         m.type.toLowerCase().includes(normalized) ||
         (m.note ?? "").toLowerCase().includes(normalized)
     );
-  }, [movements, query]);
+  }, [movements, debouncedQuery]);
+
+  const { sorted, direction, sortKey, toggle } = useSortableData<
+    MovementRow,
+    keyof typeof sortAccessors
+  >(filteredMovements, {
+    accessors: sortAccessors,
+    defaultKey: "date",
+    defaultDirection: "desc",
+  });
 
   function handleVoid(movementId: string) {
     if (
@@ -119,26 +158,55 @@ export function MovementsList({
         />
       </div>
 
-      <table className="mt-2 hidden w-full max-w-2xl text-sm md:table">
+      <table
+        className={`mt-2 hidden w-full max-w-2xl text-sm md:table${
+          isFiltering ? " opacity-60 transition-opacity" : ""
+        }`}
+      >
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="py-1 pr-3">Date</th>
-            <th className="py-1 pr-3">Type</th>
-            <th className="py-1 pr-3">Qty</th>
-            <th className="py-1 pr-3">Note</th>
-            <th className="py-1 pr-3">Status</th>
+            <SortButtonHeader
+              label="Date"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "date" ? direction : "none"}
+              onClick={() => toggle("date")}
+            />
+            <SortButtonHeader
+              label="Type"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "type" ? direction : "none"}
+              onClick={() => toggle("type")}
+            />
+            <SortButtonHeader
+              label="Qty"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "qty" ? direction : "none"}
+              onClick={() => toggle("qty")}
+            />
+            <SortButtonHeader
+              label="Note"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "note" ? direction : "none"}
+              onClick={() => toggle("note")}
+            />
+            <SortButtonHeader
+              label="Status"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "status" ? direction : "none"}
+              onClick={() => toggle("status")}
+            />
             <th className="py-1 pr-3" />
           </tr>
         </thead>
         <tbody>
-          {filteredMovements.length === 0 && (
+          {sorted.length === 0 && (
             <tr>
               <td colSpan={6} className="py-1 text-sm text-muted-foreground">
                 No movements match your search.
               </td>
             </tr>
           )}
-          {filteredMovements.map((m) => {
+          {sorted.map((m) => {
             const voided = m.voidedAt != null;
             return (
               <tr
@@ -163,11 +231,15 @@ export function MovementsList({
         </tbody>
       </table>
 
-      <div className="mt-2 flex flex-col gap-2 md:hidden">
-        {filteredMovements.length === 0 && (
+      <div
+        className={`mt-2 flex flex-col gap-2 md:hidden${
+          isFiltering ? " opacity-60 transition-opacity" : ""
+        }`}
+      >
+        {sorted.length === 0 && (
           <p className="text-sm text-muted-foreground">No movements match your search.</p>
         )}
-        {filteredMovements.map((m) => {
+        {sorted.map((m) => {
           const voided = m.voidedAt != null;
           return (
             <div
