@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
-import { cn } from "cn";
 
-export function SortIcon(props: { direction: "asc" | "desc" | "none" }): JSX.Element {
+export function SortIcon(props: { direction: "asc" | "desc" | "none" }) {
   if (props.direction === "asc") {
     return <ArrowUp className="inline ml-2" />;
   }
@@ -17,7 +16,7 @@ export function SortButtonHeader(props: {
   direction: "asc" | "desc" | "none";
   onClick: () => void;
   thClassName?: string;
-}): JSX.Element {
+}) {
   const ariaSortValue =
     props.direction === "asc"
       ? "ascending"
@@ -47,7 +46,7 @@ export function SortLinkHeader(props: {
   direction: "asc" | "desc" | "none";
   href: string;
   thClassName?: string;
-}): JSX.Element {
+}) {
   const ariaSortValue =
     props.direction === "asc"
       ? "ascending"
