@@ -184,6 +184,7 @@ export default async function ItemDetailPage({
           movementDate: m.movementDate,
           note: m.note,
           voidedAt: m.voidedAt,
+          createdAt: m.createdAt,
         }))}
         voidAction={voidMovementAction}
       />

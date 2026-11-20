@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 /** One row as rendered by this table — just what it needs from `ViewerBatch` (lib/items.ts). */
 export interface BatchRow {
@@ -14,6 +17,21 @@ export interface BatchRow {
   source: "purchase" | "opening_stock";
 }
 
+// Stable accessors object (module scope: none of these close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the sort
+// on every render — see Task 1's review note. Rows with no `unit_cost`
+// sort predictably to the low end (-1 is never a real cost).
+const sortAccessors: Record<
+  "date" | "received" | "remaining" | "cost" | "source",
+  (row: BatchRow) => string | number
+> = {
+  date: (row) => row.batch_date,
+  received: (row) => row.qty_received,
+  remaining: (row) => row.qty_remaining,
+  cost: (row) => row.unit_cost ?? -1,
+  source: (row) => row.source,
+};
+
 /**
  * This item's batch list with a client-side search, same reasoning as the
  * Items list's ItemsTable (app/(dashboard)/items/items-table.tsx) — a
@@ -23,17 +41,27 @@ export interface BatchRow {
  */
 export function BatchesTable({ batches }: { batches: BatchRow[] }) {
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 200);
+  const isPending = query !== debouncedQuery;
   const showCost = batches.some((b) => b.unit_cost !== undefined);
 
   const filteredBatches = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     if (!normalized) return batches;
     return batches.filter(
       (b) =>
         b.batch_date.toLowerCase().includes(normalized) ||
         b.source.toLowerCase().includes(normalized)
     );
-  }, [batches, query]);
+  }, [batches, debouncedQuery]);
+
+  const { sorted, direction, sortKey, toggle } = useSortableData<
+    BatchRow,
+    keyof typeof sortAccessors
+  >(filteredBatches, {
+    accessors: sortAccessors,
+    defaultKey: "date",
+  });
 
   return (
     <div>
@@ -52,18 +80,49 @@ export function BatchesTable({ batches }: { batches: BatchRow[] }) {
         />
       </div>
 
-      <table className="mt-2 hidden w-full max-w-2xl text-sm md:table">
+      <table
+        className={`mt-2 hidden w-full max-w-2xl text-sm md:table transition-opacity${
+          isPending ? " opacity-60" : ""
+        }`}
+      >
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="py-1 pr-3">Date</th>
-            <th className="py-1 pr-3">Received</th>
-            <th className="py-1 pr-3">Remaining</th>
-            {showCost && <th className="py-1 pr-3">Unit cost</th>}
-            <th className="py-1 pr-3">Source</th>
+            <SortButtonHeader
+              label="Date"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "date" ? direction : "none"}
+              onClick={() => toggle("date")}
+            />
+            <SortButtonHeader
+              label="Received"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "received" ? direction : "none"}
+              onClick={() => toggle("received")}
+            />
+            <SortButtonHeader
+              label="Remaining"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "remaining" ? direction : "none"}
+              onClick={() => toggle("remaining")}
+            />
+            {showCost && (
+              <SortButtonHeader
+                label="Unit cost"
+                thClassName="py-1 pr-3"
+                direction={sortKey === "cost" ? direction : "none"}
+                onClick={() => toggle("cost")}
+              />
+            )}
+            <SortButtonHeader
+              label="Source"
+              thClassName="py-1 pr-3"
+              direction={sortKey === "source" ? direction : "none"}
+              onClick={() => toggle("source")}
+            />
           </tr>
         </thead>
         <tbody>
-          {filteredBatches.map((batch) => (
+          {sorted.map((batch) => (
             <tr key={batch.id} className="text-brand-ink">
               <td className="py-1 pr-3">{batch.batch_date}</td>
               <td className="py-1 pr-3">{batch.qty_received}</td>
@@ -86,11 +145,15 @@ export function BatchesTable({ batches }: { batches: BatchRow[] }) {
         </tbody>
       </table>
 
-      <div className="mt-2 flex flex-col gap-2 md:hidden">
+      <div
+        className={`mt-2 flex flex-col gap-2 md:hidden transition-opacity${
+          isPending ? " opacity-60" : ""
+        }`}
+      >
         {filteredBatches.length === 0 && (
           <p className="text-sm text-muted-foreground">No batches match your search.</p>
         )}
-        {filteredBatches.map((batch) => (
+        {sorted.map((batch) => (
           <div
             key={batch.id}
             className="rounded-lg border border-border bg-card p-3 text-sm"

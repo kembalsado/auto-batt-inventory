@@ -6,7 +6,28 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { UserListItem } from "@/lib/users";
+
+// Stable accessors object (module scope: none of these close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the sort
+// on every render — see Task 1's review note.
+//
+// The "￿" fallback for a null fullName sorts a blank-name row AFTER every
+// real name ascending (and before them descending), rather than first
+// ascending — a fresh owner-only user list can plausibly have a no-name row
+// and it shouldn't dominate the top of the default view.
+const sortAccessors: Record<
+  "name" | "email" | "role" | "status",
+  (row: UserListItem) => string | number
+> = {
+  name: (row) => row.fullName ?? "￿",
+  email: (row) => row.email,
+  role: (row) => row.role,
+  status: (row) => (row.isActive ? 1 : 0),
+};
 
 /**
  * The owner-only user list, with a Deactivate/Reactivate action per row.
@@ -32,9 +53,11 @@ export function UsersTable({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [errorById, setErrorById] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 200);
+  const isSearchPending = query !== debouncedQuery;
 
   const filteredUsers = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     if (!normalized) return users;
     return users.filter(
       (u) =>
@@ -42,7 +65,15 @@ export function UsersTable({
         u.email.toLowerCase().includes(normalized) ||
         u.role.toLowerCase().includes(normalized)
     );
-  }, [users, query]);
+  }, [users, debouncedQuery]);
+
+  const { sorted, direction, sortKey, toggle } = useSortableData<
+    UserListItem,
+    keyof typeof sortAccessors
+  >(filteredUsers, {
+    accessors: sortAccessors,
+    defaultKey: "name",
+  });
 
   async function toggleActive(targetUser: UserListItem) {
     const nextIsActive = !targetUser.isActive;
@@ -103,18 +134,42 @@ export function UsersTable({
       </div>
 
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table
+          className={`w-full min-w-[640px] text-left text-sm transition-opacity${
+            isSearchPending ? " opacity-60" : ""
+          }`}
+        >
           <thead>
             <tr className="border-b border-border text-muted-foreground">
-              <th className="py-2 font-medium">Name</th>
-              <th className="py-2 font-medium">Email</th>
-              <th className="py-2 font-medium">Role</th>
-              <th className="py-2 font-medium">Status</th>
+              <SortButtonHeader
+                label="Name"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "name" ? direction : "none"}
+                onClick={() => toggle("name")}
+              />
+              <SortButtonHeader
+                label="Email"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "email" ? direction : "none"}
+                onClick={() => toggle("email")}
+              />
+              <SortButtonHeader
+                label="Role"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "role" ? direction : "none"}
+                onClick={() => toggle("role")}
+              />
+              <SortButtonHeader
+                label="Status"
+                thClassName="py-2 font-medium"
+                direction={sortKey === "status" ? direction : "none"}
+                onClick={() => toggle("status")}
+              />
               <th className="py-2 font-medium" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filteredUsers.map((u) => {
+            {sorted.map((u) => {
               const isSelf = u.id === currentUserId;
               const isPending = pendingId === u.id;
               return (
@@ -155,7 +210,7 @@ export function UsersTable({
                 </tr>
               );
             })}
-            {filteredUsers.length === 0 && (
+            {sorted.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-2 text-sm text-muted-foreground">
                   {users.length === 0 ? "No users yet." : "No users match your search."}

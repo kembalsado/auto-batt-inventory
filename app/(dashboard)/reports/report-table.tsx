@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { PendingLabel } from "./pending-indicators";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
 
 export interface ReportTableRow {
   label: string;
@@ -19,12 +23,34 @@ export interface ReportTableRow {
   href?: string;
 }
 
+// Stable accessors object (module scope: doesn't close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the
+// sort on every render — see Task 1's review note.
+//
+// `label` deliberately ignores `row.label` and sorts by the row's
+// original position (`index`) instead. Month view's `row.label` values
+// are day-of-month strings ("1".."31") where a string sort puts "10"
+// before "2"; Year view's are month names, which aren't alphabetically
+// chronological either. Rows always arrive already in correct
+// chronological order from the caller (app/(dashboard)/reports/page.tsx),
+// so sorting by index preserves/reverses that order correctly regardless
+// of what the label text looks like.
+const sortAccessors: Record<
+  "label" | "purchases" | "stockOutValue",
+  (row: ReportTableRow, index: number) => string | number
+> = {
+  label: (_row, index) => index,
+  purchases: (row) => row.purchases,
+  stockOutValue: (row) => row.stockOutValue,
+};
+
 /**
  * Plain day-by-day or month-by-month breakdown table for the Reports page.
  * Simpler than StockListTable (app/(dashboard)/stock-list/stock-list-table.tsx):
  * no search box and no cost-visibility branching, since by the time this is
- * rendered the caller has already decided cost is visible. No "use client"
- * — this is static markup, server-renderable like the rest of the page.
+ * rendered the caller has already decided cost is visible. Still a client
+ * component (useSortableData is useState-backed) even though there's
+ * nothing to debounce.
  *
  * `isCurrent` rows are marked the same way Calendar marks "today"
  * (app/(dashboard)/calendar/page.tsx): `text-brand-green font-bold` on the
@@ -42,17 +68,40 @@ export function ReportTable({
   rows: ReportTableRow[];
   labelHeader: string;
 }) {
+  const { sorted, sortKey, direction, toggle } = useSortableData<
+    ReportTableRow,
+    keyof typeof sortAccessors
+  >(rows, {
+    accessors: sortAccessors,
+    defaultKey: "label",
+  });
+
   return (
     <table className="mt-6 w-full text-left text-sm">
       <thead>
         <tr className="border-b border-border text-muted-foreground">
-          <th className="py-2 font-medium">{labelHeader}</th>
-          <th className="py-2 font-medium">Purchases</th>
-          <th className="py-2 font-medium">Stock-out value</th>
+          <SortButtonHeader
+            label={labelHeader}
+            direction={sortKey === "label" ? direction : "none"}
+            onClick={() => toggle("label")}
+            thClassName="py-2 font-medium"
+          />
+          <SortButtonHeader
+            label="Purchases"
+            direction={sortKey === "purchases" ? direction : "none"}
+            onClick={() => toggle("purchases")}
+            thClassName="py-2 font-medium"
+          />
+          <SortButtonHeader
+            label="Stock-out value"
+            direction={sortKey === "stockOutValue" ? direction : "none"}
+            onClick={() => toggle("stockOutValue")}
+            thClassName="py-2 font-medium"
+          />
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
-        {rows.map((row) => (
+        {sorted.map((row) => (
           <tr key={row.label} className="text-brand-ink">
             <td className={row.isCurrent ? "font-bold text-brand-green" : ""}>
               {row.href ? (

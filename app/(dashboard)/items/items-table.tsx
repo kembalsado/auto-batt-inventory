@@ -6,7 +6,25 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { SortButtonHeader } from "@/components/sortable-header";
+import { useSortableData } from "@/lib/use-sortable-data";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { StockListRow } from "@/lib/stock-list";
+
+// Stable accessors object (module scope: none of these close over props or
+// state) so `useSortableData`'s internal useMemo doesn't recompute the sort
+// on every render — see Task 1's review note.
+const sortAccessors: Record<
+  "sku" | "name" | "category" | "vehicle" | "unit" | "qtyOnHand",
+  (row: StockListRow) => string | number
+> = {
+  sku: (row) => row.sku,
+  name: (row) => row.name,
+  category: (row) => row.category,
+  vehicle: (row) => row.vehicle,
+  unit: (row) => row.unit,
+  qtyOnHand: (row) => row.qtyOnHand,
+};
 
 /**
  * Client-side search for the Items list. `buildStockListRows` already
@@ -19,9 +37,11 @@ import type { StockListRow } from "@/lib/stock-list";
 export function ItemsTable({ rows }: { rows: StockListRow[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 200);
+  const isPending = query !== debouncedQuery;
 
   const filteredRows = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     if (!normalized) return rows;
     return rows.filter(
       (row) =>
@@ -30,7 +50,15 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
         row.category.toLowerCase().includes(normalized) ||
         row.vehicle.toLowerCase().includes(normalized)
     );
-  }, [rows, query]);
+  }, [rows, debouncedQuery]);
+
+  const { sorted, direction, sortKey, toggle } = useSortableData<
+    StockListRow,
+    keyof typeof sortAccessors
+  >(filteredRows, {
+    accessors: sortAccessors,
+    defaultKey: "name",
+  });
 
   // The whole row already highlights on hover (hover:bg-muted/40 below),
   // but only the item name was ever an actual <Link> — so a pointer
@@ -66,19 +94,53 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
           a phone's width. Both read the same `filteredRows` — see Stock
           List and the Activity page for the same split, all for the same
           reason. */}
-      <table className="mt-4 hidden w-full text-left text-sm md:table">
+      <table
+        className={`mt-4 hidden w-full text-left text-sm md:table transition-opacity${
+          isPending ? " opacity-60" : ""
+        }`}
+      >
         <thead>
           <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 font-medium">SKU</th>
-            <th className="py-2 font-medium">Name</th>
-            <th className="py-2 font-medium">Category</th>
-            <th className="py-2 font-medium">Vehicle</th>
-            <th className="py-2 font-medium">Unit</th>
-            <th className="py-2 font-medium">Qty on hand</th>
+            <SortButtonHeader
+              label="SKU"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "sku" ? direction : "none"}
+              onClick={() => toggle("sku")}
+            />
+            <SortButtonHeader
+              label="Name"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "name" ? direction : "none"}
+              onClick={() => toggle("name")}
+            />
+            <SortButtonHeader
+              label="Category"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "category" ? direction : "none"}
+              onClick={() => toggle("category")}
+            />
+            <SortButtonHeader
+              label="Vehicle"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "vehicle" ? direction : "none"}
+              onClick={() => toggle("vehicle")}
+            />
+            <SortButtonHeader
+              label="Unit"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "unit" ? direction : "none"}
+              onClick={() => toggle("unit")}
+            />
+            <SortButtonHeader
+              label="Qty on hand"
+              thClassName="py-2 font-medium"
+              direction={sortKey === "qtyOnHand" ? direction : "none"}
+              onClick={() => toggle("qtyOnHand")}
+            />
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {filteredRows.map((row) => (
+          {sorted.map((row) => (
             <tr
               key={row.id}
               onClick={(event) => handleRowClick(event, row.id)}
@@ -116,13 +178,17 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
         </tbody>
       </table>
 
-      <div className="mt-4 flex flex-col gap-2 md:hidden">
+      <div
+        className={`mt-4 flex flex-col gap-2 md:hidden transition-opacity${
+          isPending ? " opacity-60" : ""
+        }`}
+      >
         {filteredRows.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {rows.length === 0 ? "No items yet." : "No items match your search."}
           </p>
         )}
-        {filteredRows.map((row) => (
+        {sorted.map((row) => (
           <Link
             key={row.id}
             href={`/items/${row.id}`}
