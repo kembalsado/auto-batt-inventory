@@ -95,8 +95,8 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
           List and the Activity page for the same split, all for the same
           reason. */}
       <table
-        className={`mt-4 hidden w-full text-left text-sm md:table${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-4 hidden w-full text-left text-sm md:table transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         <thead>
@@ -179,8 +179,8 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
       </table>
 
       <div
-        className={`mt-4 flex flex-col gap-2 md:hidden${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-4 flex flex-col gap-2 md:hidden transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         {filteredRows.length === 0 && (

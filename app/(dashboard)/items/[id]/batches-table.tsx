@@ -81,8 +81,8 @@ export function BatchesTable({ batches }: { batches: BatchRow[] }) {
       </div>
 
       <table
-        className={`mt-2 hidden w-full max-w-2xl text-sm md:table${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-2 hidden w-full max-w-2xl text-sm md:table transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         <thead>
@@ -146,8 +146,8 @@ export function BatchesTable({ batches }: { batches: BatchRow[] }) {
       </table>
 
       <div
-        className={`mt-2 flex flex-col gap-2 md:hidden${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-2 flex flex-col gap-2 md:hidden transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         {filteredBatches.length === 0 && (

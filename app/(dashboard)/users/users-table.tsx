@@ -135,8 +135,8 @@ export function UsersTable({
 
       <div className="mt-4 overflow-x-auto">
         <table
-          className={`w-full min-w-[640px] text-left text-sm${
-            isSearchPending ? " opacity-60 transition-opacity" : ""
+          className={`w-full min-w-[640px] text-left text-sm transition-opacity${
+            isSearchPending ? " opacity-60" : ""
           }`}
         >
           <thead>

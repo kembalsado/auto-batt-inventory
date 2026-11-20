@@ -95,8 +95,8 @@ export function StockListTable({
           since a printed page has the table's full width available
           regardless of screen size. */}
       <table
-        className={`mt-6 hidden w-full text-left text-sm md:table print:table${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-6 hidden w-full text-left text-sm md:table print:table transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         <thead>
@@ -194,8 +194,8 @@ export function StockListTable({
       </table>
 
       <div
-        className={`mt-4 flex flex-col gap-2 md:hidden print:hidden${
-          isPending ? " opacity-60 transition-opacity" : ""
+        className={`mt-4 flex flex-col gap-2 md:hidden print:hidden transition-opacity${
+          isPending ? " opacity-60" : ""
         }`}
       >
         {filteredRows.length === 0 && (

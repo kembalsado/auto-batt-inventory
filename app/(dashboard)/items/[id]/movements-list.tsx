@@ -159,8 +159,8 @@ export function MovementsList({
       </div>
 
       <table
-        className={`mt-2 hidden w-full max-w-2xl text-sm md:table${
-          isFiltering ? " opacity-60 transition-opacity" : ""
+        className={`mt-2 hidden w-full max-w-2xl text-sm md:table transition-opacity${
+          isFiltering ? " opacity-60" : ""
         }`}
       >
         <thead>
@@ -232,8 +232,8 @@ export function MovementsList({
       </table>
 
       <div
-        className={`mt-2 flex flex-col gap-2 md:hidden${
-          isFiltering ? " opacity-60 transition-opacity" : ""
+        className={`mt-2 flex flex-col gap-2 md:hidden transition-opacity${
+          isFiltering ? " opacity-60" : ""
         }`}
       >
         {sorted.length === 0 && (
