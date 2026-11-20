@@ -3,12 +3,12 @@ import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 export function SortIcon(props: { direction: "asc" | "desc" | "none" }) {
   if (props.direction === "asc") {
-    return <ArrowUp className="inline ml-2" />;
+    return <ArrowUp className="inline size-3.5" />;
   }
   if (props.direction === "desc") {
-    return <ArrowDown className="inline ml-2" />;
+    return <ArrowDown className="inline size-3.5" />;
   }
-  return <ArrowUpDown className="inline ml-2" />;
+  return <ArrowUpDown className="inline size-3.5" />;
 }
 
 export function SortButtonHeader(props: {
