@@ -14,9 +14,11 @@ import {
   type ItemActivity,
 } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
+import { Button } from "@/components/ui/button";
 import { ReportTable, type ReportTableRow } from "./report-table";
 import { ItemActivityList } from "./item-activity-list";
 import { PendingIcon, PendingLabel, PendingSubmitButton } from "./pending-indicators";
+import { PrintExportButton } from "./print-export-button";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -227,6 +229,24 @@ export default async function ReportsPage({
     nextLabel = "Next year";
   }
 
+  // Export routes (app/api/reports/pdf, app/api/reports/excel) resolve
+  // `view`/`date`/`year`/`month` via the same `parseReportsViewParams`
+  // this page already called above, so these query strings always export
+  // exactly the view the page is currently showing.
+  const exportParams =
+    view === "day"
+      ? `view=day&date=${date}`
+      : view === "month"
+        ? `view=month&year=${year}&month=${month}`
+        : `view=year&year=${year}`;
+  const pdfHref = `/api/reports/pdf?${exportParams}`;
+  const excelHref = `/api/reports/excel?${exportParams}`;
+  // Print opens this inline variant (see app/api/reports/pdf/route.tsx's
+  // `inline` handling) so the new tab actually displays the PDF to print,
+  // rather than downloading it the way the Export PDF link's `pdfHref`
+  // does.
+  const printHref = `${pdfHref}&inline=1`;
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Reports</h1>
@@ -317,6 +337,16 @@ export default async function ReportsPage({
             <PendingSubmitButton />
           </form>
         )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <PrintExportButton href={printHref} />
+        <Button asChild variant="outline" size="touch">
+          <a href={pdfHref}>Export PDF</a>
+        </Button>
+        <Button asChild variant="outline" size="touch">
+          <a href={excelHref}>Export Excel</a>
+        </Button>
       </div>
 
       <div className="mt-6 max-w-3xl overflow-hidden rounded-xl border border-border shadow-sm">

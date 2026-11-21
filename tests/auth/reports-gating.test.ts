@@ -258,6 +258,20 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
       expect(buffer.byteLength).toBeGreaterThan(0);
     });
 
+    test("?inline=1 serves the PDF inline instead of as a download attachment", async () => {
+      // The Reports page's Print button (print-export-button.tsx) opens
+      // this route in a new tab and calls .print() on it — an `attachment`
+      // disposition makes the browser download the file instead of
+      // displaying it, leaving nothing in that tab to print.
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/pdf?view=day&date=${today}&inline=1`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-disposition")).toContain("inline");
+      expect(res.headers.get("content-disposition")).not.toContain("attachment");
+    });
+
     test("an owner gets a PDF for Month view", async () => {
       const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
       const [year, month] = today.split("-");

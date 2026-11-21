@@ -263,10 +263,17 @@ export async function GET(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const url = new URL(request.url);
   const { view, date, year, month } = parseReportsViewParams(
-    Object.fromEntries(new URL(request.url).searchParams),
+    Object.fromEntries(url.searchParams),
     manilaToday()
   );
+  // `?inline=1` — used only by the Reports page's Print button
+  // (print-export-button.tsx), which opens this route in a new tab and
+  // calls `.print()` on it: an `attachment` disposition (the Export PDF
+  // link's own default) makes the browser download the file instead of
+  // displaying it, leaving nothing in that tab to print.
+  const inline = url.searchParams.get("inline") === "1";
 
   const adminSupabase = createAdminClient();
 
@@ -331,7 +338,7 @@ export async function GET(request: Request): Promise<Response> {
   return new Response(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename}"`,
     },
   });
 }
