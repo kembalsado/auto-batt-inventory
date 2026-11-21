@@ -1,30 +1,18 @@
 import { createServerClient } from "@/lib/supabase/server";
-import { listAuditLog, ACTIONS } from "@/lib/activity";
+import {
+  listAuditLog,
+  actorLabel,
+  sortAuditLog,
+  buildActivitySortHref,
+  parseAuditSort,
+  ACTIONS,
+} from "@/lib/activity";
 import { listItems } from "@/lib/items";
 import { Button } from "@/components/ui/button";
+import { SortLinkHeader } from "@/components/sortable-header";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
-}
-
-/**
- * Display name for an audit row's actor.
- *
- * `profiles` holds only `id`, `full_name` and `role` — there is no email
- * column, and `auth.users` is not readable from a user session, so a
- * profile with no `full_name` falls back to a short id rather than an
- * email address. Showing something is the point: the audit log exists to
- * answer "who changed what", and this screen rendered only Date / Action
- * / Summary, so the "who" half was never on screen at all.
- */
-function actorLabel(
-  actorId: string | null,
-  namesById: Map<string, string | null>
-): string {
-  if (!actorId) return "System";
-  const name = namesById.get(actorId);
-  if (name) return name;
-  return `Unknown (${actorId.slice(0, 8)})`;
 }
 
 /**
@@ -47,9 +35,11 @@ export default async function ActivityPage({
     actorId?: string;
     action?: string;
     q?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }) {
-  const { itemId, actorId, action, q } = await searchParams;
+  const { itemId, actorId, action, q, sort, dir } = await searchParams;
   const supabase = await createServerClient();
 
   const [entries, items, profilesResult] = await Promise.all([
@@ -68,6 +58,9 @@ export default async function ActivityPage({
   const actorNamesById = new Map<string, string | null>(
     profiles.map((profile) => [profile.id, profile.full_name])
   );
+
+  const { sortKey, direction } = parseAuditSort(sort, dir);
+  const sortedEntries = sortAuditLog(entries, actorNamesById, sortKey, direction);
 
   const hasFilters = Boolean(itemId || actorId || action || q);
 
@@ -154,14 +147,34 @@ export default async function ActivityPage({
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-border text-muted-foreground">
-              <th className="py-2 font-medium">Date</th>
-              <th className="py-2 font-medium">User</th>
-              <th className="py-2 font-medium">Action</th>
-              <th className="py-2 font-medium">Summary</th>
+              <SortLinkHeader
+                thClassName="py-2 font-medium"
+                label="Date"
+                direction={sortKey === "date" ? direction : "none"}
+                href={buildActivitySortHref({ itemId, actorId, action, q, sort, dir }, "date")}
+              />
+              <SortLinkHeader
+                thClassName="py-2 font-medium"
+                label="User"
+                direction={sortKey === "user" ? direction : "none"}
+                href={buildActivitySortHref({ itemId, actorId, action, q, sort, dir }, "user")}
+              />
+              <SortLinkHeader
+                thClassName="py-2 font-medium"
+                label="Action"
+                direction={sortKey === "action" ? direction : "none"}
+                href={buildActivitySortHref({ itemId, actorId, action, q, sort, dir }, "action")}
+              />
+              <SortLinkHeader
+                thClassName="py-2 font-medium"
+                label="Summary"
+                direction={sortKey === "summary" ? direction : "none"}
+                href={buildActivitySortHref({ itemId, actorId, action, q, sort, dir }, "summary")}
+              />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {entries.map((entry) => (
+            {sortedEntries.map((entry) => (
               <tr key={entry.id} className="text-brand-ink transition-colors hover:bg-muted/40">
                 <td className="py-2">{formatDate(entry.createdAt)}</td>
                 <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
@@ -169,7 +182,7 @@ export default async function ActivityPage({
                 <td className="py-2">{entry.summary}</td>
               </tr>
             ))}
-            {entries.length === 0 && (
+            {sortedEntries.length === 0 && (
               <tr>
                 <td colSpan={4} className="py-2 text-sm text-muted-foreground">
                   No activity yet.

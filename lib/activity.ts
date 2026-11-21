@@ -181,3 +181,133 @@ export async function listAuditLog(
     createdAt: row.created_at,
   }));
 }
+
+/**
+ * Display name for an audit row's actor.
+ *
+ * `profiles` holds only `id`, `full_name` and `role` — there is no email
+ * column, and `auth.users` is not readable from a user session, so a
+ * profile with no `full_name` falls back to a short id rather than an
+ * email address. Showing something is the point: the audit log exists to
+ * answer "who changed what", and this screen rendered only Date / Action
+ * / Summary, so the "who" half was never on screen at all.
+ */
+export function actorLabel(
+  actorId: string | null,
+  namesById: Map<string, string | null>
+): string {
+  if (!actorId) return "System";
+  const name = namesById.get(actorId);
+  if (name) return name;
+  return `Unknown (${actorId.slice(0, 8)})`;
+}
+
+/** The Activity table's sortable columns. See `sortAuditLog`. */
+export type AuditSortKey = "date" | "user" | "action" | "summary";
+export type AuditSortDirection = "asc" | "desc";
+
+const AUDIT_SORT_KEYS: AuditSortKey[] = ["date", "user", "action", "summary"];
+
+function isAuditSortKey(value: string | undefined): value is AuditSortKey {
+  return value !== undefined && (AUDIT_SORT_KEYS as string[]).includes(value);
+}
+
+function isAuditSortDirection(value: string | undefined): value is AuditSortDirection {
+  return value === "asc" || value === "desc";
+}
+
+/**
+ * Validates a `?sort=&dir=` query-param pair against `AuditSortKey`/
+ * `AuditSortDirection`, defaulting to `"date"`/`"desc"` when either is
+ * missing or not one of the recognized values. Shared by
+ * `buildActivitySortHref` (below) and the Activity page itself, so the
+ * page's validation of the URL it reads is guaranteed to match the
+ * validation `buildActivitySortHref` used to build that same URL.
+ */
+export function parseAuditSort(
+  sort: string | undefined,
+  dir: string | undefined
+): { sortKey: AuditSortKey; direction: AuditSortDirection } {
+  return {
+    sortKey: isAuditSortKey(sort) ? sort : "date",
+    direction: isAuditSortDirection(dir) ? dir : "desc",
+  };
+}
+
+/**
+ * Returns a NEW array of `entries` sorted by `sortKey`/`direction`. Never
+ * mutates `entries` — the Activity page (kept server-rendered, with no
+ * client JS and no `useSortableData`) re-derives this on every request
+ * from the URL's `?sort=&dir=`, so the input array must stay untouched
+ * for the caller's own use (e.g. computing `hasFilters` or counts).
+ *
+ * All four columns compare via `localeCompare`, including `"date"`: ISO
+ * 8601 timestamps (as `audit_log.created_at` is read back, see
+ * `listAuditLog`) sort correctly under plain string comparison, so there
+ * is no need to parse them into `Date` objects first.
+ */
+export function sortAuditLog(
+  entries: AuditLogEntry[],
+  actorNamesById: Map<string, string | null>,
+  sortKey: AuditSortKey,
+  direction: AuditSortDirection
+): AuditLogEntry[] {
+  function valueFor(entry: AuditLogEntry): string {
+    switch (sortKey) {
+      case "date":
+        return entry.createdAt;
+      case "user":
+        return actorLabel(entry.actorId, actorNamesById);
+      case "action":
+        return entry.action;
+      case "summary":
+        return entry.summary;
+    }
+  }
+
+  return [...entries].sort((a, b) => {
+    const comparison = valueFor(a).localeCompare(valueFor(b));
+    return direction === "desc" ? -comparison : comparison;
+  });
+}
+
+/**
+ * Builds the `href` for one of the Activity table's `SortLinkHeader`
+ * column links. The page is server-rendered with no client JS, so the
+ * entire toggle rule from `useSortableData.toggle` (flip direction if
+ * `column` is already the active sort, otherwise switch to `column`
+ * ascending) is reimplemented here against the URL instead of React
+ * state, and every other filter already in `params`
+ * (`itemId`/`actorId`/`action`/`q`) is carried forward unchanged — this
+ * is the same reason the page's own filter `<form>` works without client
+ * JS: state lives entirely in the query string.
+ */
+export function buildActivitySortHref(
+  params: {
+    itemId?: string;
+    actorId?: string;
+    action?: string;
+    q?: string;
+    sort?: string;
+    dir?: string;
+  },
+  column: AuditSortKey
+): string {
+  const { sortKey: currentKey, direction: currentDirection } = parseAuditSort(
+    params.sort,
+    params.dir
+  );
+
+  const nextDirection: AuditSortDirection =
+    column === currentKey ? (currentDirection === "asc" ? "desc" : "asc") : "asc";
+
+  const searchParams = new URLSearchParams();
+  if (params.itemId) searchParams.set("itemId", params.itemId);
+  if (params.actorId) searchParams.set("actorId", params.actorId);
+  if (params.action) searchParams.set("action", params.action);
+  if (params.q) searchParams.set("q", params.q);
+  searchParams.set("sort", column);
+  searchParams.set("dir", nextDirection);
+
+  return `/activity?${searchParams.toString()}`;
+}
