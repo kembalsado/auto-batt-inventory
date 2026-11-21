@@ -54,3 +54,67 @@ export async function listCarMakes(
 
   return data ?? [];
 }
+
+/**
+ * Updates a car make's name and records an audit_log entry for it.
+ * `name` must be unique — the database's unique constraint on
+ * `car_makes.name` rejects a duplicate, surfaced here as a thrown error.
+ */
+export async function updateCarMake(
+  supabase: SupabaseClient,
+  actorId: string,
+  id: string,
+  name: string
+): Promise<CarMake> {
+  const { data, error } = await supabase
+    .from("car_makes")
+    .update({ name })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  await recordAudit(supabase, {
+    actorId,
+    action: "car_make.updated",
+    entityType: "car_make",
+    entityId: data.id,
+    summary: `Updated car make ${data.name}`,
+  });
+
+  return data;
+}
+
+/**
+ * Deletes a car make and records an audit_log entry for it.
+ * The database's foreign-key constraint on `items.make_id` rejects
+ * deletion if the car make is still referenced by an item, surfaced here
+ * as a thrown error.
+ */
+export async function deleteCarMake(
+  supabase: SupabaseClient,
+  actorId: string,
+  id: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("car_makes")
+    .delete()
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  await recordAudit(supabase, {
+    actorId,
+    action: "car_make.deleted",
+    entityType: "car_make",
+    entityId: id,
+    summary: `Deleted car make ${data.name}`,
+  });
+}
