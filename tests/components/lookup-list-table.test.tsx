@@ -76,6 +76,38 @@ test("owner can rename an item: Edit swaps to an input, Save calls PATCH, then r
   );
 });
 
+test("owner can rename a make: Save calls PATCH against /api/makes, not /api/categories", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const makes = [
+    { id: "1", name: "Toyota" },
+    { id: "2", name: "Honda" },
+  ];
+
+  render(
+    <LookupListTable
+      items={makes}
+      apiBasePath="/api/makes"
+      noun="make"
+      isOwner={true}
+      emptyLabel="No makes yet."
+    />
+  );
+
+  fireEvent.click(screen.getAllByRole("button", { name: /edit/i })[0]);
+  const input = screen.getByDisplayValue("Toyota");
+  fireEvent.change(input, { target: { value: "Toyota Motors" } });
+  fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/makes/1",
+      expect.objectContaining({ method: "PATCH" })
+    )
+  );
+});
+
 test("Save is disabled while the edit input is blank or whitespace", () => {
   render(
     <LookupListTable
