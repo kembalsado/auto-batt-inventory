@@ -11,6 +11,7 @@ import {
   getMonthlyReport,
   getAnnualReport,
   getItemActivityByDate,
+  getItemActivityByDateRange,
 } from "@/lib/reports";
 
 // Plain anon-key client used to sign in as a real user and exercise RLS /
@@ -555,6 +556,185 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
       expect(new Date(row.movements[0].occurredAt).getTime()).toBeLessThan(
         new Date(row.movements[1].occurredAt).getTime()
       );
+    });
+  });
+
+  describe("getItemActivityByDateRange", () => {
+    // Dates in this block all live in 2026-09, untouched by every other
+    // fixture in this file (see the grep that confirmed this before
+    // writing these tests) — getPurchasesByDate/getStockOutValueByDate
+    // (used by the sum-equality test below) scan stock_movements/
+    // movement_allocations globally, not per-owner, so a shared or
+    // reused date range here would silently pick up another test's data.
+
+    test("groups each date in the range separately, chronologically ordered, with no entry for a day with no activity", async () => {
+      const runId = randomUUID().slice(0, 8);
+      const category = await createCategory(admin, OWNER_ID, `ItemActivityRange-${runId}`);
+      createdCategoryIds.push(category.id);
+      const item = await createItem(admin, OWNER_ID, {
+        sku: `IAR-${runId}`,
+        name: "Item Activity Range Test Item",
+        categoryId: category.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(item.id);
+
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: item.id,
+        qty: 8,
+        unitCost: 50,
+        batchDate: "2026-09-01",
+      });
+      await recordStockOut(admin, OWNER_ID, {
+        itemId: item.id,
+        qty: 2,
+        movementDate: "2026-09-03",
+      });
+
+      const result = await getItemActivityByDateRange(ownerClient, admin, "2026-09-01", "2026-09-03");
+
+      expect(result.map((r) => r.date)).toEqual(["2026-09-01", "2026-09-03"]);
+
+      const day1 = result.find((r) => r.date === "2026-09-01")!;
+      const day1Row = day1.items.find((r) => r.itemId === item.id)!;
+      expect(day1Row.movements).toHaveLength(1);
+      expect(day1Row.movements[0]).toMatchObject({ type: "IN", quantity: 8, cost: 400 });
+
+      const day3 = result.find((r) => r.date === "2026-09-03")!;
+      const day3Row = day3.items.find((r) => r.itemId === item.id)!;
+      expect(day3Row.movements).toHaveLength(1);
+      expect(day3Row.movements[0]).toMatchObject({ type: "OUT", quantity: 2, cost: 100 });
+    });
+
+    test("a range with no qualifying movement anywhere returns an empty array", async () => {
+      const result = await getItemActivityByDateRange(ownerClient, admin, "2026-09-25", "2026-09-26");
+      expect(result).toEqual([]);
+    });
+
+    test("a voided movement contributes nothing", async () => {
+      const { movementId } = await recordStockIn(admin, OWNER_ID, {
+        itemId,
+        qty: 6,
+        unitCost: 15,
+        batchDate: "2026-09-10",
+      });
+      await voidMovement(admin, OWNER_ID, movementId);
+
+      const result = await getItemActivityByDateRange(ownerClient, admin, "2026-09-10", "2026-09-10");
+      const day = result.find((r) => r.date === "2026-09-10");
+      expect(day?.items.find((r) => r.itemId === itemId)).toBeUndefined();
+    });
+
+    test("an opening-stock import shows qty with zero cost, not excluded", async () => {
+      const openingStockDate = "2026-09-12";
+      const { data: batch, error: batchError } = await admin
+        .from("batches")
+        .insert({
+          item_id: itemId,
+          batch_date: openingStockDate,
+          qty_received: 9,
+          qty_remaining: 9,
+          unit_cost: 42,
+          source: "opening_stock",
+          created_by: OWNER_ID,
+        })
+        .select("id")
+        .single();
+      if (batchError) throw batchError;
+
+      const { error: movementError } = await admin.from("stock_movements").insert({
+        item_id: itemId,
+        type: "IN",
+        quantity: 9,
+        batch_id: batch.id,
+        movement_date: openingStockDate,
+        created_by: OWNER_ID,
+      });
+      if (movementError) throw movementError;
+
+      const result = await getItemActivityByDateRange(ownerClient, admin, openingStockDate, openingStockDate);
+      const day = result.find((r) => r.date === openingStockDate)!;
+      const row = day.items.find((r) => r.itemId === itemId)!;
+      expect(row.movements).toHaveLength(1);
+      expect(row.movements[0].quantity).toBe(9);
+      expect(row.movements[0].cost).toBe(0);
+    });
+
+    test("per-item cost sums across the range equal getPurchasesByDate/getStockOutValueByDate's totals for the same range", async () => {
+      const runId = randomUUID().slice(0, 8);
+      const startDate = "2026-09-15";
+      const endDate = "2026-09-16";
+
+      const categoryA = await createCategory(admin, OWNER_ID, `ItemActivityRangeSumA-${runId}`);
+      createdCategoryIds.push(categoryA.id);
+      const itemA = await createItem(admin, OWNER_ID, {
+        sku: `IAR-SUM-A-${runId}`,
+        name: "Item Activity Range Sum Test A",
+        categoryId: categoryA.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(itemA.id);
+
+      const categoryB = await createCategory(admin, OWNER_ID, `ItemActivityRangeSumB-${runId}`);
+      createdCategoryIds.push(categoryB.id);
+      const itemB = await createItem(admin, OWNER_ID, {
+        sku: `IAR-SUM-B-${runId}`,
+        name: "Item Activity Range Sum Test B",
+        categoryId: categoryB.id,
+        unit: "pcs",
+      });
+      createdItemIds.push(itemB.id);
+
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: itemA.id,
+        qty: 5,
+        unitCost: 40,
+        batchDate: startDate,
+      });
+      await recordStockOut(admin, OWNER_ID, {
+        itemId: itemA.id,
+        qty: 1,
+        movementDate: startDate,
+      });
+      await recordStockIn(admin, OWNER_ID, {
+        itemId: itemB.id,
+        qty: 3,
+        unitCost: 30,
+        batchDate: endDate,
+      });
+      await recordStockOut(admin, OWNER_ID, {
+        itemId: itemB.id,
+        qty: 2,
+        movementDate: endDate,
+      });
+
+      const [rangeActivity, purchasesByDate, stockOutByDate] = await Promise.all([
+        getItemActivityByDateRange(ownerClient, admin, startDate, endDate),
+        getPurchasesByDate(ownerClient, startDate, endDate),
+        getStockOutValueByDate(admin, startDate, endDate),
+      ]);
+
+      let costInSum = 0;
+      let costOutSum = 0;
+      for (const day of rangeActivity) {
+        for (const row of day.items) {
+          for (const movement of row.movements) {
+            if (movement.type === "IN") {
+              costInSum += movement.cost;
+            } else {
+              costOutSum += movement.cost;
+            }
+          }
+        }
+      }
+
+      const purchasesTotal = Array.from(purchasesByDate.values()).reduce((s, v) => s + v, 0);
+      const stockOutTotal = Array.from(stockOutByDate.values()).reduce((s, v) => s + v, 0);
+
+      expect(costInSum).toBeGreaterThan(0);
+      expect(costOutSum).toBeGreaterThan(0);
+      expect(costInSum).toBe(purchasesTotal);
+      expect(costOutSum).toBe(stockOutTotal);
     });
   });
 

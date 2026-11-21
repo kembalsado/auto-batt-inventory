@@ -282,7 +282,14 @@ export async function getStockOutValueByDate(
   return totalsByDate;
 }
 
-/** Row shape read from the single-day `stock_movements` query below. */
+/**
+ * Row shape read from the single-day `stock_movements` query below.
+ * `movement_date` is only actually selected by `getItemActivityByDateRange`'s
+ * own range query below (`getItemActivityByDate`'s query already filters
+ * server-side on a single known date, so it has no need to select the
+ * column back) — shared here rather than duplicated into a second
+ * near-identical interface.
+ */
 interface DayMovementRow {
   id: string;
   item_id: string;
@@ -291,6 +298,11 @@ interface DayMovementRow {
   batch_id: string | null;
   /** ISO timestamp — when this movement was recorded, not just its date. */
   created_at: string;
+  /** "YYYY-MM-DD" — optional because Supabase's untyped client infers this
+   * interface's shape from each query's own select string, and
+   * `getItemActivityByDate`'s query (unlike `getItemActivityByDateRange`'s)
+   * doesn't select it — it already knows the date from its own parameter. */
+  movement_date?: string;
 }
 
 /** Row shape read from the `batches_for_viewer` lookup below (IN side). */
@@ -562,6 +574,185 @@ export async function getItemActivityByDate(
 
   activity.sort((a, b) => a.name.localeCompare(b.name));
   return activity;
+}
+
+/** One calendar date's `ItemActivity` breakdown, as returned by
+ * `getItemActivityByDateRange` below. */
+export interface DailyItemActivity {
+  /** "YYYY-MM-DD" */
+  date: string;
+  items: ItemActivity[];
+}
+
+/**
+ * Same per-item/per-movement breakdown as `getItemActivityByDate`, extended
+ * one grouping level: every non-voided IN/OUT movement across
+ * `startDate`..`endDate` (inclusive), bucketed first by `movement_date` and
+ * then by item — one range query per table instead of one call to
+ * `getItemActivityByDate` per day in the range, for the same reason
+ * `getPurchasesByDate`/`getStockOutValueByDate` query their own ranges once
+ * rather than looping a single-date function.
+ *
+ * Same inclusion/cost rules as `getItemActivityByDate` (no `is_active`
+ * filter, opening-stock imports included at zero cost, voided movements
+ * excluded via `voided_at is null`) and the same client requirements
+ * (`supabase` needs a real session for `batches_for_viewer`; `adminSupabase`
+ * is the only client that can read `movement_allocations`).
+ *
+ * Returns `[]` when no date in the range has any qualifying movement.
+ * Otherwise sparse and chronologically ordered — a date only appears when
+ * it had at least one qualifying movement, same convention
+ * `getPurchasesByDate` uses for its own date-keyed map.
+ */
+export async function getItemActivityByDateRange(
+  supabase: SupabaseClient,
+  adminSupabase: SupabaseClient,
+  startDate: string,
+  endDate: string
+): Promise<DailyItemActivity[]> {
+  const movements = await fetchAllPages<DayMovementRow>((offset) =>
+    supabase
+      .from("stock_movements")
+      .select("id, item_id, type, quantity, batch_id, created_at, movement_date")
+      .gte("movement_date", startDate)
+      .lte("movement_date", endDate)
+      .is("voided_at", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+  );
+
+  if (movements.length === 0) {
+    return [];
+  }
+
+  const inMovements = movements.filter((m) => m.type === "IN");
+  const outMovements = movements.filter((m) => m.type === "OUT");
+
+  // Same reasoning as getItemActivityByDate: the IN side's batch-cost
+  // lookup and the OUT side's allocation-cost lookup don't depend on each
+  // other, so they run in the same Promise.all. Resolved once across the
+  // whole range (not once per date) — the same reason
+  // getPurchasesByDate/getStockOutValueByDate query their own ranges once.
+  const batchIds = Array.from(
+    new Set(inMovements.map((m) => m.batch_id).filter((id): id is string => id != null))
+  );
+  const movementIds = outMovements.map((m) => m.id);
+
+  const [batchRows, allocationRows] = await Promise.all([
+    batchIds.length > 0
+      ? fetchAllForIds<DayViewerBatchRow>(batchIds, (idChunk, offset) =>
+          supabase
+            .from("batches_for_viewer")
+            .select("id, unit_cost, source")
+            .in("id", idChunk)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+        )
+      : Promise.resolve([] as DayViewerBatchRow[]),
+    movementIds.length > 0
+      ? fetchAllForIds<DayAllocationRow>(movementIds, (idChunk, offset) =>
+          adminSupabase
+            .from("movement_allocations")
+            .select("movement_id, qty_allocated, unit_cost_at_allocation")
+            .in("movement_id", idChunk)
+            .order("id", { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+        )
+      : Promise.resolve([] as DayAllocationRow[]),
+  ]);
+
+  const batchById = new Map<string, DayViewerBatchRow>();
+  for (const batch of batchRows) {
+    batchById.set(batch.id, batch);
+  }
+
+  const costByMovementId = new Map<string, number>();
+  for (const movement of inMovements) {
+    const batch = movement.batch_id ? batchById.get(movement.batch_id) : undefined;
+    if (!batch || batch.source !== "purchase" || batch.unit_cost == null) {
+      continue;
+    }
+    costByMovementId.set(movement.id, Number(movement.quantity) * Number(batch.unit_cost));
+  }
+  for (const allocation of allocationRows) {
+    const cost = Number(allocation.qty_allocated) * Number(allocation.unit_cost_at_allocation);
+    costByMovementId.set(
+      allocation.movement_id,
+      (costByMovementId.get(allocation.movement_id) ?? 0) + cost
+    );
+  }
+
+  // Bucket by date first — the grouping level getItemActivityByDate
+  // doesn't need, since it only ever handles one date at a time.
+  const movementsByDate = new Map<string, DayMovementRow[]>();
+  for (const movement of movements) {
+    // Always present here — this function's own query selects it (unlike
+    // getItemActivityByDate's, see DayMovementRow's docstring).
+    const movementDate = movement.movement_date!;
+    const list = movementsByDate.get(movementDate) ?? [];
+    list.push(movement);
+    movementsByDate.set(movementDate, list);
+  }
+
+  // Items lookup runs once across every distinct item touched anywhere in
+  // the range, not once per date, to avoid redundant lookups for an item
+  // that moved on more than one day within the range.
+  const allItemIds = Array.from(new Set(movements.map((m) => m.item_id)));
+  const itemRows = await fetchAllForIds<ItemActivityItemQueryRow>(
+    allItemIds,
+    (idChunk, offset) =>
+      supabase
+        .from("items")
+        .select("id, sku, name, unit, model, variant, year, car_makes(name)")
+        .in("id", idChunk)
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+  );
+  const items = itemRows as unknown as ItemActivityItemRow[];
+  const itemById = new Map<string, ItemActivityItemRow>();
+  for (const item of items) {
+    itemById.set(item.id, item);
+  }
+
+  const dates = Array.from(movementsByDate.keys()).sort();
+
+  return dates.map((date) => {
+    const dayMovements = movementsByDate.get(date)!;
+
+    const movementsByItemId = new Map<string, ItemActivityMovement[]>();
+    for (const movement of dayMovements) {
+      const list = movementsByItemId.get(movement.item_id) ?? [];
+      list.push({
+        movementId: movement.id,
+        type: movement.type,
+        occurredAt: movement.created_at,
+        quantity: Number(movement.quantity),
+        cost: costByMovementId.get(movement.id) ?? 0,
+      });
+      movementsByItemId.set(movement.item_id, list);
+    }
+    for (const list of movementsByItemId.values()) {
+      list.sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
+    }
+
+    const dayItems: ItemActivity[] = Array.from(movementsByItemId.keys()).map((itemId) => {
+      const item = itemById.get(itemId)!;
+      return {
+        itemId: item.id,
+        sku: item.sku,
+        name: item.name,
+        vehicle:
+          [item.car_makes?.name, item.model, item.variant, item.year]
+            .filter(Boolean)
+            .join(" ") || "—",
+        unit: item.unit,
+        movements: movementsByItemId.get(itemId) ?? [],
+      };
+    });
+    dayItems.sort((a, b) => a.name.localeCompare(b.name));
+
+    return { date, items: dayItems };
+  });
 }
 
 /** Shared Purchases/Stock-out-value pair every report shape rolls up from. */
