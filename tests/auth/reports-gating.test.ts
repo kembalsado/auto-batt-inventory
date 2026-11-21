@@ -307,4 +307,81 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
       expect(buffer.byteLength).toBeGreaterThan(0);
     });
   });
+
+  describe("GET /api/reports/excel", () => {
+    test("an assistant with cost hidden gets 403, not an Excel file", async () => {
+      const cookie = await signInCookieHeader(ASSISTANT_EMAIL, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/excel`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    test("an owner gets an Excel file for Day view containing the seeded item's activity", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/excel?view=day&date=${today}`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      expect(res.headers.get("content-disposition")).toContain(`reports-day-${today}.xlsx`);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("an owner gets an Excel file for Month view", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const [year, month] = today.split("-");
+      const res = await fetch(
+        `${BASE_URL}/api/reports/excel?view=month&year=${year}&month=${Number(month)}`,
+        { headers: { Cookie: cookie } }
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      expect(res.headers.get("content-disposition")).toContain(
+        `reports-month-${year}-${month}.xlsx`
+      );
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("an owner gets an Excel file for Year view", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const [year] = today.split("-");
+      const res = await fetch(`${BASE_URL}/api/reports/excel?view=year&year=${year}`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      expect(res.headers.get("content-disposition")).toContain(`reports-year-${year}.xlsx`);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("a Day export with zero activity still returns 200 with a non-empty Excel file", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/excel?view=day&date=2020-01-01`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("a Month export where the whole month has zero activity still returns 200 with a non-empty Excel file", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/excel?view=month&year=2019&month=1`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+  });
 });
