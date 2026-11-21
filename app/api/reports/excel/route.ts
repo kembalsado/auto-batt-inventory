@@ -1,10 +1,5 @@
 import ExcelJS from "exceljs";
-import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getRole, canSeeCost } from "@/lib/permissions";
-import { getSettings } from "@/lib/settings";
-import { manilaToday, manilaTime } from "@/lib/date";
+import { manilaTime } from "@/lib/date";
 import { firstDayOfMonth, lastDayOfMonth } from "@/lib/calendar";
 import {
   getDailyReport,
@@ -12,9 +7,9 @@ import {
   getAnnualReport,
   getItemActivityByDate,
   getItemActivityByDateRange,
-  parseReportsViewParams,
   type ItemActivity,
 } from "@/lib/reports";
+import { resolveReportsExportRequest } from "@/lib/reports-export";
 
 // exceljs writes via Node Buffers/streams, so this needs the Node.js
 // runtime, not Edge — already the default for a Route Handler. Same
@@ -32,14 +27,13 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-// Plain (non-keyed) array column widths for the item-activity detail
-// sheets below — deliberately NOT set via exceljs's `columns = [{header,
-// key, ...}]` convenience, which writes a header row into row 1 the
-// moment it's assigned: both detail sheets below need their own header
-// row somewhere other than row 1 (Day Activity's sits after two totals
-// rows and a blank), so headers are written as plain rows instead and
-// `columns` here only ever carries `width` — a column def with no
-// `header` property doesn't touch row 1 at all.
+// Every sheet below is built from plain (non-keyed) array rows rather
+// than exceljs's `columns = [{header, key, ...}]` convenience, which
+// writes a header row into row 1 the moment it's assigned — every sheet
+// here puts its own period-label row (e.g. "Day" / "2026-11-10") above
+// the header, so none of them can let `columns` own row 1. `columns` is
+// only ever used afterward, and only for `{width}` (no `header`/`key`),
+// which doesn't touch any row's contents.
 const ITEM_DETAIL_WIDTHS = [10, 16, 28, 20, 8, 10, 14]; // Time, SKU, Name, Vehicle, Type, Qty, Cost
 const ITEM_DETAIL_HEADER = ["Time", "SKU", "Name", "Vehicle", "Type", "Qty", "Cost"];
 
@@ -76,35 +70,29 @@ function writeItemActivityRows(
   }
 }
 
+/** Writes a bold `["<label>", value]` period-marker row (row 1) + a blank
+ * separator row (row 2) at the top of `sheet` — every sheet below opens
+ * this way, so a workbook saved or renamed away from its original
+ * filename (the only other place the period appeared) still says what
+ * it's reporting on. */
+function writePeriodHeader(sheet: ExcelJS.Worksheet, label: string, value: string) {
+  sheet.addRow([label, value]);
+  sheet.getRow(1).font = { bold: true };
+  sheet.addRow([]);
+}
+
 /**
  * GET /api/reports/excel?view=&date=&year=&month= — same resolution and
- * gating as app/api/reports/pdf/route.tsx (see that route's docstring);
- * built as a workbook via exceljs instead of a PDF document tree.
+ * gating as app/api/reports/pdf/route.tsx (see that route's docstring and
+ * `resolveReportsExportRequest`); built as a workbook via exceljs instead
+ * of a PDF document tree.
  */
 export async function GET(request: Request): Promise<Response> {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const profile = user
-    ? (
-        await supabase.from("profiles").select("role").eq("id", user.id).single()
-      ).data
-    : null;
-  const role = getRole(profile);
-  const settings = await getSettings(supabase);
-
-  if (!canSeeCost(role, settings)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const resolved = await resolveReportsExportRequest(request);
+  if (!resolved.ok) {
+    return resolved.response;
   }
-
-  const { view, date, year, month } = parseReportsViewParams(
-    Object.fromEntries(new URL(request.url).searchParams),
-    manilaToday()
-  );
-
-  const adminSupabase = createAdminClient();
+  const { supabase, adminSupabase, view, date, year, month } = resolved.value;
 
   const workbook = new ExcelJS.Workbook();
   let filename: string;
@@ -116,11 +104,12 @@ export async function GET(request: Request): Promise<Response> {
     ]);
 
     const sheet = workbook.addWorksheet("Day Activity");
+    writePeriodHeader(sheet, "Day", date);
     sheet.addRow(["Purchases", report.purchases]);
     sheet.addRow(["Stock-out value", report.stockOutValue]);
     sheet.addRow([]);
     sheet.addRow(ITEM_DETAIL_HEADER);
-    sheet.getRow(4).font = { bold: true };
+    sheet.getRow(6).font = { bold: true };
     writeItemActivityRows(sheet, itemActivity, "No activity this day");
     sheet.columns = ITEM_DETAIL_WIDTHS.map((width) => ({ width }));
 
@@ -132,25 +121,21 @@ export async function GET(request: Request): Promise<Response> {
       getMonthlyReport(supabase, adminSupabase, year, month),
       getItemActivityByDateRange(supabase, adminSupabase, startDate, endDate),
     ]);
+    const monthLabel = `${year}-${pad2(month)}`;
 
     const summarySheet = workbook.addWorksheet("Summary");
-    summarySheet.columns = [
-      { header: "Day", key: "day", width: 10 },
-      { header: "Purchases", key: "purchases", width: 14 },
-      { header: "Stock-out value", key: "stockOutValue", width: 18 },
-    ];
-    summarySheet.getRow(1).font = { bold: true };
+    writePeriodHeader(summarySheet, "Month", monthLabel);
+    summarySheet.addRow(["Day", "Purchases", "Stock-out value"]);
+    summarySheet.getRow(3).font = { bold: true };
     for (const day of report.days) {
-      summarySheet.addRow({
-        day: Number(day.date.slice(8, 10)),
-        purchases: day.purchases,
-        stockOutValue: day.stockOutValue,
-      });
+      summarySheet.addRow([Number(day.date.slice(8, 10)), day.purchases, day.stockOutValue]);
     }
+    summarySheet.columns = [10, 14, 18].map((width) => ({ width }));
 
     const itemDetailSheet = workbook.addWorksheet("Item Detail");
+    writePeriodHeader(itemDetailSheet, "Month", monthLabel);
     itemDetailSheet.addRow(["Date", ...ITEM_DETAIL_HEADER]);
-    itemDetailSheet.getRow(1).font = { bold: true };
+    itemDetailSheet.getRow(3).font = { bold: true };
     if (dailyItemActivity.length === 0) {
       itemDetailSheet.addRow(["No activity this month"]);
     } else {
@@ -160,24 +145,18 @@ export async function GET(request: Request): Promise<Response> {
     }
     itemDetailSheet.columns = [12, ...ITEM_DETAIL_WIDTHS].map((width) => ({ width }));
 
-    filename = `reports-month-${year}-${pad2(month)}.xlsx`;
+    filename = `reports-month-${monthLabel}.xlsx`;
   } else {
     const report = await getAnnualReport(supabase, adminSupabase, year);
 
     const sheet = workbook.addWorksheet("Summary");
-    sheet.columns = [
-      { header: "Month", key: "month", width: 14 },
-      { header: "Purchases", key: "purchases", width: 14 },
-      { header: "Stock-out value", key: "stockOutValue", width: 18 },
-    ];
-    sheet.getRow(1).font = { bold: true };
+    writePeriodHeader(sheet, "Year", String(year));
+    sheet.addRow(["Month", "Purchases", "Stock-out value"]);
+    sheet.getRow(3).font = { bold: true };
     for (const monthRow of report.months) {
-      sheet.addRow({
-        month: MONTH_NAMES[monthRow.month - 1],
-        purchases: monthRow.purchases,
-        stockOutValue: monthRow.stockOutValue,
-      });
+      sheet.addRow([MONTH_NAMES[monthRow.month - 1], monthRow.purchases, monthRow.stockOutValue]);
     }
+    sheet.columns = [14, 14, 18].map((width) => ({ width }));
 
     filename = `reports-year-${year}.xlsx`;
   }

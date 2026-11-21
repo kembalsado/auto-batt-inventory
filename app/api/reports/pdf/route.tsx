@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import {
   Document,
   Page,
@@ -7,11 +6,7 @@ import {
   StyleSheet,
   renderToBuffer,
 } from "@react-pdf/renderer";
-import { createServerClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getRole, canSeeCost } from "@/lib/permissions";
-import { getSettings } from "@/lib/settings";
-import { manilaToday, manilaTime } from "@/lib/date";
+import { manilaTime } from "@/lib/date";
 import { firstDayOfMonth, lastDayOfMonth } from "@/lib/calendar";
 import {
   getDailyReport,
@@ -19,10 +14,10 @@ import {
   getAnnualReport,
   getItemActivityByDate,
   getItemActivityByDateRange,
-  parseReportsViewParams,
   type ItemActivity,
   type DailyItemActivity,
 } from "@/lib/reports";
+import { resolveReportsExportRequest } from "@/lib/reports-export";
 import { formatCurrency } from "@/lib/format";
 
 // @react-pdf/renderer's renderToBuffer is Node-only (see app/api/stock-list/
@@ -246,36 +241,18 @@ function ReportsDocument(props: ReportsDocumentProps) {
  * (already-hidden) export buttons.
  */
 export async function GET(request: Request): Promise<Response> {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const profile = user
-    ? (
-        await supabase.from("profiles").select("role").eq("id", user.id).single()
-      ).data
-    : null;
-  const role = getRole(profile);
-  const settings = await getSettings(supabase);
-
-  if (!canSeeCost(role, settings)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const resolved = await resolveReportsExportRequest(request);
+  if (!resolved.ok) {
+    return resolved.response;
   }
+  const { supabase, adminSupabase, view, date, year, month } = resolved.value;
 
-  const url = new URL(request.url);
-  const { view, date, year, month } = parseReportsViewParams(
-    Object.fromEntries(url.searchParams),
-    manilaToday()
-  );
   // `?inline=1` — used only by the Reports page's Print button
   // (print-export-button.tsx), which opens this route in a new tab and
   // calls `.print()` on it: an `attachment` disposition (the Export PDF
   // link's own default) makes the browser download the file instead of
   // displaying it, leaving nothing in that tab to print.
-  const inline = url.searchParams.get("inline") === "1";
-
-  const adminSupabase = createAdminClient();
+  const inline = new URL(request.url).searchParams.get("inline") === "1";
 
   let documentProps: ReportsDocumentProps;
   let filename: string;

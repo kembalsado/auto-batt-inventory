@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import ExcelJS from "exceljs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { createCategory } from "@/lib/categories";
@@ -246,7 +247,14 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
       expect(res.status).toBe(403);
     });
 
-    test("an owner gets a PDF for Day view containing the seeded item's activity", async () => {
+    test("an owner gets a PDF for Day view", async () => {
+      // Only status/headers/non-empty-body are checked here — @react-pdf/
+      // renderer's output isn't practical to assert real content against
+      // without a PDF text-extraction dependency this project doesn't
+      // carry (same bar Stock List's own PDF route is held to: no test
+      // asserts its content either). The Excel route's equivalent test
+      // below does assert real content, since exceljs can read its own
+      // output straight back.
       const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
       const res = await fetch(`${BASE_URL}/api/reports/pdf?view=day&date=${today}`, {
         headers: { Cookie: cookie },
@@ -343,6 +351,25 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
       expect(res.headers.get("content-disposition")).toContain(`reports-day-${today}.xlsx`);
       const buffer = await res.arrayBuffer();
       expect(buffer.byteLength).toBeGreaterThan(0);
+
+      // Real content, not just a non-empty buffer: exceljs can read back
+      // its own output, so there's no need for Stock List's "no content
+      // assertions" bar here the way the PDF route's test above has to
+      // accept it — a regression that silently dropped the period label
+      // or the item rows (exactly the class of bug Ruling 3 on this
+      // branch fixed) would pass every check above this one.
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const sheet = workbook.getWorksheet("Day Activity")!;
+      expect(sheet.getRow(1).getCell(1).value).toBe("Day");
+      expect(sheet.getRow(1).getCell(2).value).toBe(today);
+
+      const allCellValues: unknown[] = [];
+      sheet.eachRow((row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => allCellValues.push(cell.value));
+      });
+      expect(allCellValues).toContain("Reports Gating Test Item");
+      expect(allCellValues).toContain(SEEDED_UNIT_COST);
     });
 
     test("an owner gets an Excel file for Month view", async () => {
