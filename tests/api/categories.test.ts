@@ -203,6 +203,7 @@ describe("DELETE /api/categories/[id]", () => {
       .insert({ name: "Route Delete Me" })
       .select()
       .single();
+    createdCategoryIds.push(category!.id);
 
     const cookie = await signInCookieHeader(
       "test-cat-route-owner-4@example.com",
