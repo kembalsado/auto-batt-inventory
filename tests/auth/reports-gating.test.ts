@@ -236,4 +236,75 @@ describe("GET /reports — assistant cost gating (Finding 2 regression)", () => 
     const monthBody = await monthRes.text();
     expect(monthBody).toContain(`date=${openingStockDate}`);
   });
+
+  describe("GET /api/reports/pdf", () => {
+    test("an assistant with cost hidden gets 403, not a PDF", async () => {
+      const cookie = await signInCookieHeader(ASSISTANT_EMAIL, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/pdf`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    test("an owner gets a PDF for Day view containing the seeded item's activity", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/pdf?view=day&date=${today}`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/pdf");
+      expect(res.headers.get("content-disposition")).toContain(`reports-day-${today}.pdf`);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("an owner gets a PDF for Month view", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const [year, month] = today.split("-");
+      const res = await fetch(
+        `${BASE_URL}/api/reports/pdf?view=month&year=${year}&month=${Number(month)}`,
+        { headers: { Cookie: cookie } }
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/pdf");
+      expect(res.headers.get("content-disposition")).toContain(
+        `reports-month-${year}-${month}.pdf`
+      );
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("an owner gets a PDF for Year view", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const [year] = today.split("-");
+      const res = await fetch(`${BASE_URL}/api/reports/pdf?view=year&year=${year}`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/pdf");
+      expect(res.headers.get("content-disposition")).toContain(`reports-year-${year}.pdf`);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("a Day export with zero activity still returns 200 with a non-empty PDF", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/pdf?view=day&date=2020-01-01`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    test("a Month export where the whole month has zero activity still returns 200 with a non-empty PDF", async () => {
+      const cookie = await signInCookieHeader(ownerEmail, PASSWORD);
+      const res = await fetch(`${BASE_URL}/api/reports/pdf?view=month&year=2019&month=1`, {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+  });
 });
