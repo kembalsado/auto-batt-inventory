@@ -10,6 +10,7 @@ import {
   getMonthlyReport,
   getAnnualReport,
   getItemActivityByDate,
+  parseReportsViewParams,
   type ItemActivity,
 } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
@@ -21,8 +22,6 @@ const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-
-type View = "day" | "month" | "year";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -90,7 +89,7 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ view?: string; date?: string; year?: string; month?: string }>;
 }) {
-  const { view: viewParam, date: dateParam, year: yearParam, month: monthParam } = await searchParams;
+  const resolvedSearchParams = await searchParams;
 
   const supabase = await createServerClient();
   const {
@@ -121,14 +120,12 @@ export default async function ReportsPage({
   const today = manilaToday();
   const [todayYear, todayMonth] = today.split("-").map(Number);
 
-  const view: View = viewParam === "day" || viewParam === "year" ? viewParam : "month";
-
-  const year = Number.isFinite(Number(yearParam)) && yearParam ? Number(yearParam) : todayYear;
-  const month =
-    Number.isFinite(Number(monthParam)) && monthParam && Number(monthParam) >= 1 && Number(monthParam) <= 12
-      ? Number(monthParam)
-      : todayMonth;
-  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : today;
+  const { view, date, year, month } = parseReportsViewParams(resolvedSearchParams, today);
+  // Raw (unparsed/undefined-able) `date` param — distinct from the above
+  // `date`, which always defaults to `today`. Only used below by Month
+  // view's day-detail modal, which needs to tell "no date param at all"
+  // apart from "date param happens to equal today".
+  const { date: dateParam } = resolvedSearchParams;
 
   // Where each tab link lands, preserving the current date context as
   // closely as possible rather than always resetting to "today":

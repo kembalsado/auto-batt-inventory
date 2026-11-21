@@ -12,6 +12,7 @@ import {
   getAnnualReport,
   getItemActivityByDate,
   getItemActivityByDateRange,
+  parseReportsViewParams,
 } from "@/lib/reports";
 
 // Plain anon-key client used to sign in as a real user and exercise RLS /
@@ -837,5 +838,42 @@ describe("getPurchasesByDate / getStockOutValueByDate", () => {
       expect(report.stockOutValue).toBe(0);
       expect(report.days.every((d) => d.purchases === 0 && d.stockOutValue === 0)).toBe(true);
     });
+  });
+});
+
+describe("parseReportsViewParams", () => {
+  const today = "2026-11-22";
+
+  test("defaults to month view, today's year/month/date, when no params are given", () => {
+    expect(parseReportsViewParams({}, today)).toEqual({
+      view: "month",
+      date: "2026-11-22",
+      year: 2026,
+      month: 11,
+    });
+  });
+
+  test('an invalid or missing view falls back to "month"', () => {
+    expect(parseReportsViewParams({ view: "bogus" }, today).view).toBe("month");
+    expect(parseReportsViewParams({}, today).view).toBe("month");
+    expect(parseReportsViewParams({ view: "day" }, today).view).toBe("day");
+    expect(parseReportsViewParams({ view: "year" }, today).view).toBe("year");
+  });
+
+  test("an invalid year falls back to today's year, a valid one is parsed", () => {
+    expect(parseReportsViewParams({ year: "not-a-number" }, today).year).toBe(2026);
+    expect(parseReportsViewParams({ year: "2020" }, today).year).toBe(2020);
+  });
+
+  test("an out-of-range or invalid month falls back to today's month, a valid one is parsed", () => {
+    expect(parseReportsViewParams({ month: "0" }, today).month).toBe(11);
+    expect(parseReportsViewParams({ month: "13" }, today).month).toBe(11);
+    expect(parseReportsViewParams({ month: "x" }, today).month).toBe(11);
+    expect(parseReportsViewParams({ month: "3" }, today).month).toBe(3);
+  });
+
+  test("an invalid date format falls back to today, a valid one is parsed", () => {
+    expect(parseReportsViewParams({ date: "11-22-2026" }, today).date).toBe(today);
+    expect(parseReportsViewParams({ date: "2026-01-05" }, today).date).toBe("2026-01-05");
   });
 });

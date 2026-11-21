@@ -918,3 +918,43 @@ export async function getAnnualReport(
 
   return { year, months, purchases, stockOutValue };
 }
+
+/** The Reports page's resolved view/date state, as `parseReportsViewParams`
+ * below derives it from a request's raw query-string params. */
+export interface ReportsViewParams {
+  view: "day" | "month" | "year";
+  /** Always a valid "YYYY-MM-DD" — defaulted to `today` when the raw
+   * `date` param is missing or malformed. */
+  date: string;
+  year: number;
+  /** 1-12 */
+  month: number;
+}
+
+/**
+ * Resolves the Reports page's `?view=&date=&year=&month=` query params into
+ * `ReportsViewParams`, defaulting anything missing or invalid against
+ * `today`. Moved verbatim from `app/(dashboard)/reports/page.tsx`'s own
+ * inline logic (same defaulting rules) so the page and the PDF/Excel export
+ * routes (app/api/reports/pdf, app/api/reports/excel) can never interpret
+ * the same query string differently.
+ */
+export function parseReportsViewParams(
+  searchParams: { view?: string; date?: string; year?: string; month?: string },
+  today: string
+): ReportsViewParams {
+  const { view: viewParam, date: dateParam, year: yearParam, month: monthParam } = searchParams;
+  const [todayYear, todayMonth] = today.split("-").map(Number);
+
+  const view: ReportsViewParams["view"] =
+    viewParam === "day" || viewParam === "year" ? viewParam : "month";
+
+  const year = Number.isFinite(Number(yearParam)) && yearParam ? Number(yearParam) : todayYear;
+  const month =
+    Number.isFinite(Number(monthParam)) && monthParam && Number(monthParam) >= 1 && Number(monthParam) <= 12
+      ? Number(monthParam)
+      : todayMonth;
+  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : today;
+
+  return { view, date, year, month };
+}
