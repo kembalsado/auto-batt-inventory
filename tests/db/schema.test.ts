@@ -201,6 +201,13 @@ test("RLS: an owner can update and delete a car_make directly; an assistant cann
       .select();
     expect(assistantUpdateData).toEqual([]);
 
+    const { data: assistantDeleteData } = await assistantClient
+      .from("car_makes")
+      .delete()
+      .eq("id", make!.id)
+      .select();
+    expect(assistantDeleteData).toEqual([]);
+
     const ownerClient = createAnonClient();
     await ownerClient.auth.signInWithPassword({
       email: `test-rls-make-owner-${runId}@example.com`,
