@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { createCarMake, listCarMakes } from "@/lib/car-makes";
 import { isUniqueViolation } from "@/lib/errors";
+import { getRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LookupListTable } from "@/components/lookup-list-table";
 
 async function addMake(formData: FormData) {
   "use server";
@@ -59,6 +61,16 @@ export default async function MakesPage({
   const supabase = await createServerClient();
   const makes = await listCarMakes(supabase);
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user?.id ?? "")
+    .single();
+  const isOwner = getRole(profile) === "owner";
+
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
 
   return (
@@ -87,18 +99,13 @@ export default async function MakesPage({
         </p>
       )}
 
-      <ul className="mt-6 divide-y divide-border">
-        {makes.map((make) => (
-          <li key={make.id} className="py-2 text-sm text-brand-ink">
-            {make.name}
-          </li>
-        ))}
-        {makes.length === 0 && (
-          <li className="py-2 text-sm text-muted-foreground">
-            No makes yet.
-          </li>
-        )}
-      </ul>
+      <LookupListTable
+        items={makes}
+        apiBasePath="/api/makes"
+        noun="make"
+        isOwner={isOwner}
+        emptyLabel="No makes yet."
+      />
     </div>
   );
 }
