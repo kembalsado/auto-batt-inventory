@@ -51,3 +51,14 @@ export function describeError(err: unknown): string {
 export function isUniqueViolation(err: unknown): boolean {
   return asDatabaseError(err)?.code === "23505";
 }
+
+/**
+ * True for a Postgres foreign-key-constraint violation (SQLSTATE 23503).
+ *
+ * This occurs when attempting to delete a row that is referenced by a
+ * foreign key constraint. For example, trying to delete a category that
+ * still has items referencing it.
+ */
+export function isForeignKeyViolation(err: unknown): boolean {
+  return asDatabaseError(err)?.code === "23503";
+}

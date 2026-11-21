@@ -1,5 +1,17 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createCarMake, listCarMakes } from "@/lib/car-makes";
+import { createCarMake, listCarMakes, updateCarMake, deleteCarMake } from "@/lib/car-makes";
+import { createCategory } from "@/lib/categories";
+import { createItem } from "@/lib/items";
+import { randomUUID } from "node:crypto";
+
+// Every fixture name below gets this suffix so it can never collide with
+// real seeded data (an auto-battery-inventory app plausibly has real
+// makes named "Toyota", "Honda", etc.) or with another concurrent test
+// run's rows — see tests/lib/errors.test.ts and tests/db/schema.test.ts
+// for the same pattern. Because every name is run-unique, there is nothing
+// for a previous run to have left behind, so (unlike this file's earlier
+// version) there is no by-name leftover cleanup here.
+const runId = randomUUID().slice(0, 8);
 
 // A real profile row is required: audit_log.actor_id has a FK to
 // profiles(id) (recordAudit writes a row on every createCarMake call).
@@ -7,14 +19,17 @@ let OWNER_ID: string;
 
 // Every car make and audit_log row created by this file's tests is
 // tracked here and deleted in afterAll, so the suite is safely rerunnable
-// without a manual `supabase db reset` (car_makes.name is unique, so a
-// leftover "Toyota"/"Honda" row would otherwise fail the next run).
+// without a manual `supabase db reset`.
 const createdMakeIds: string[] = [];
+
+// Track created categories for FK test cleanup
+const createdCategoryIds: string[] = [];
 
 beforeAll(async () => {
   const admin = createAdminClient();
+
   const { data: owner } = await admin.auth.admin.createUser({
-    email: "test-car-makes-owner@example.com",
+    email: `test-car-makes-owner-${runId}@example.com`,
     password: "test-password-123",
     email_confirm: true,
     user_metadata: { role: "owner" },
@@ -28,6 +43,7 @@ afterAll(async () => {
   // are both non-cascading FKs, so audit_log rows must go first, then
   // profiles, then the auth user.
   await admin.from("car_makes").delete().in("id", createdMakeIds);
+  await admin.from("categories").delete().in("id", createdCategoryIds);
   await admin.from("audit_log").delete().eq("actor_id", OWNER_ID);
   await admin.from("profiles").delete().eq("id", OWNER_ID);
   await admin.auth.admin.deleteUser(OWNER_ID);
@@ -35,10 +51,10 @@ afterAll(async () => {
 
 test("createCarMake inserts a make and writes an audit log entry", async () => {
   const supabase = createAdminClient();
-  const make = await createCarMake(supabase, OWNER_ID, "Toyota");
+  const make = await createCarMake(supabase, OWNER_ID, `Toyota-${runId}`);
   createdMakeIds.push(make.id);
 
-  expect(make.name).toBe("Toyota");
+  expect(make.name).toBe(`Toyota-${runId}`);
 
   const { data: log } = await supabase
     .from("audit_log")
@@ -50,20 +66,85 @@ test("createCarMake inserts a make and writes an audit log entry", async () => {
 
 test("createCarMake rejects a duplicate name", async () => {
   const supabase = createAdminClient();
-  const make = await createCarMake(supabase, OWNER_ID, "Honda");
+  const make = await createCarMake(supabase, OWNER_ID, `Honda-${runId}`);
   createdMakeIds.push(make.id);
 
-  await expect(createCarMake(supabase, OWNER_ID, "Honda")).rejects.toThrow();
+  await expect(createCarMake(supabase, OWNER_ID, `Honda-${runId}`)).rejects.toThrow();
 });
 
 test("listCarMakes returns created makes ordered by name", async () => {
   const supabase = createAdminClient();
-  const toyota = await createCarMake(supabase, OWNER_ID, "ZZZ-Toyota");
-  const honda = await createCarMake(supabase, OWNER_ID, "AAA-Honda");
+  const toyota = await createCarMake(supabase, OWNER_ID, `ZZZ-Toyota-${runId}`);
+  const honda = await createCarMake(supabase, OWNER_ID, `AAA-Honda-${runId}`);
   createdMakeIds.push(toyota.id, honda.id);
 
   const makes = await listCarMakes(supabase);
   const names = makes.map((m) => m.name);
 
-  expect(names.indexOf("AAA-Honda")).toBeLessThan(names.indexOf("ZZZ-Toyota"));
+  expect(names.indexOf(`AAA-Honda-${runId}`)).toBeLessThan(names.indexOf(`ZZZ-Toyota-${runId}`));
+});
+
+test("updateCarMake renames a car make and records an audit log entry", async () => {
+  const supabase = createAdminClient();
+  const make = await createCarMake(supabase, OWNER_ID, `Ford-${runId}`);
+  createdMakeIds.push(make.id);
+
+  const updated = await updateCarMake(supabase, OWNER_ID, make.id, `Chevrolet-${runId}`);
+  expect(updated.name).toBe(`Chevrolet-${runId}`);
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", make.id)
+    .eq("action", "car_make.updated")
+    .single();
+  expect(log?.summary).toContain(`Chevrolet-${runId}`);
+});
+
+test("updateCarMake rejects renaming to a name that collides with a different car make", async () => {
+  const supabase = createAdminClient();
+  const a = await createCarMake(supabase, OWNER_ID, `BMW-${runId}`);
+  const b = await createCarMake(supabase, OWNER_ID, `Mercedes-${runId}`);
+  createdMakeIds.push(a.id, b.id);
+
+  await expect(updateCarMake(supabase, OWNER_ID, b.id, `BMW-${runId}`)).rejects.toThrow();
+});
+
+test("deleteCarMake removes an unused car make and records an audit log entry", async () => {
+  const supabase = createAdminClient();
+  const make = await createCarMake(supabase, OWNER_ID, `Audi-${runId}`);
+
+  await deleteCarMake(supabase, OWNER_ID, make.id);
+
+  const { data } = await supabase.from("car_makes").select("id").eq("id", make.id).maybeSingle();
+  expect(data).toBeNull();
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", make.id)
+    .eq("action", "car_make.deleted")
+    .single();
+  expect(log?.summary).toContain(`Audi-${runId}`);
+});
+
+test("deleteCarMake rejects deleting a car make that's still referenced by an item", async () => {
+  const supabase = createAdminClient();
+  const make = await createCarMake(supabase, OWNER_ID, `In Use Make-${runId}`);
+  createdMakeIds.push(make.id);
+  const category = await createCategory(supabase, OWNER_ID, `In Use Category-${runId}`);
+  createdCategoryIds.push(category.id);
+  const item = await createItem(supabase, OWNER_ID, {
+    sku: `AB-MAKE-INUSE-${make.id.slice(0, 8)}`,
+    name: "Blocks delete",
+    categoryId: category.id,
+    makeId: make.id,
+    unit: "pcs",
+  });
+
+  try {
+    await expect(deleteCarMake(supabase, OWNER_ID, make.id)).rejects.toThrow();
+  } finally {
+    await supabase.from("items").delete().eq("id", item.id);
+  }
 });

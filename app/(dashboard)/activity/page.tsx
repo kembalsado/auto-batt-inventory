@@ -5,40 +5,11 @@ import {
   sortAuditLog,
   buildActivitySortHref,
   parseAuditSort,
+  ACTIONS,
 } from "@/lib/activity";
 import { listItems } from "@/lib/items";
 import { Button } from "@/components/ui/button";
 import { SortLinkHeader } from "@/components/sortable-header";
-
-// The fixed set of `action` values any mutating task writes (see
-// lib/categories.ts, lib/items.ts, lib/settings.ts, and the SQL functions
-// in supabase/migrations/0006-0008 for record_stock_in/record_stock_out/
-// void_movement). Listed explicitly, rather than derived from a `select
-// distinct` query, so the filter always offers every known action type
-// even on a freshly-seeded, near-empty audit_log.
-const ACTIONS = [
-  "item.created",
-  // Written by updateItem (lib/items.ts) for the item edit form — missing
-  // from this list until the branch-wide review, same gap "user.created"
-  // below once had: the rows were being recorded but unfilterable.
-  "item.updated",
-  "category.created",
-  "settings.updated",
-  "movement.created",
-  "movement.voided",
-  // Written by createUserAsOwner (lib/users.ts) — missing from this list
-  // until the final review, so the Add User screen's activity was
-  // unfilterable even though the rows were being recorded.
-  "user.created",
-  // Written by setUserActive (lib/users.ts) for the Users table's
-  // deactivate/reactivate action — added alongside it this time, not
-  // after the fact like "user.created" above.
-  "user.deactivated",
-  "user.activated",
-  // Written by createCarMake (lib/car-makes.ts) for the Makes management
-  // page's "Add make" action.
-  "car_make.created",
-];
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();

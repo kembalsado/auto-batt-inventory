@@ -1,5 +1,55 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// The fixed set of `action` values any mutating task writes (see
+// lib/categories.ts, lib/car-makes.ts, lib/items.ts, lib/settings.ts, and
+// the SQL functions in supabase/migrations/0006-0008 for
+// record_stock_in/record_stock_out/void_movement). Listed explicitly,
+// rather than derived from a `select distinct` query, so the filter always
+// offers every known action type even on a freshly-seeded, near-empty
+// audit_log. See tests/lib/activity-actions.test.ts, which greps every
+// lib/*.ts file's `recordAudit` calls and fails if one isn't listed here —
+// added after this list was caught missing entries at final review three
+// times running.
+export const ACTIONS = [
+  "item.created",
+  // Written by updateItem (lib/items.ts) for the item edit form — missing
+  // from this list until the branch-wide review, same gap "user.created"
+  // below once had: the rows were being recorded but unfilterable.
+  "item.updated",
+  "category.created",
+  // Written by updateCategory (lib/categories.ts) for the Categories
+  // page's inline rename — missing from this list until the final review,
+  // same gap as item.updated/user.created above.
+  "category.updated",
+  // Written by deleteCategory (lib/categories.ts) for the Categories
+  // page's delete action — missing from this list until the final review,
+  // same gap as item.updated/user.created above.
+  "category.deleted",
+  "settings.updated",
+  "movement.created",
+  "movement.voided",
+  // Written by createUserAsOwner (lib/users.ts) — missing from this list
+  // until the final review, so the Add User screen's activity was
+  // unfilterable even though the rows were being recorded.
+  "user.created",
+  // Written by setUserActive (lib/users.ts) for the Users table's
+  // deactivate/reactivate action — added alongside it this time, not
+  // after the fact like "user.created" above.
+  "user.deactivated",
+  "user.activated",
+  // Written by createCarMake (lib/car-makes.ts) for the Makes management
+  // page's "Add make" action.
+  "car_make.created",
+  // Written by updateCarMake (lib/car-makes.ts) for the Makes page's
+  // inline rename — missing from this list until the final review, same
+  // gap as item.updated/user.created above.
+  "car_make.updated",
+  // Written by deleteCarMake (lib/car-makes.ts) for the Makes page's
+  // delete action — missing from this list until the final review, same
+  // gap as item.updated/user.created above.
+  "car_make.deleted",
+];
+
 /**
  * One `audit_log` row as read back for the Activity screen (Task 14). See
  * supabase/migrations/0001_init.sql for the table, and `AuditEntry` in

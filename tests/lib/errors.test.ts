@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
-import { describeError, isUniqueViolation } from "@/lib/errors";
+import { describeError, isUniqueViolation, isForeignKeyViolation } from "@/lib/errors";
 import { randomUUID } from "node:crypto";
 
 const runId = randomUUID().slice(0, 8);
@@ -110,4 +110,31 @@ test("isUniqueViolation is false for other failures", () => {
   expect(isUniqueViolation(new Error("boom"))).toBe(false);
   expect(isUniqueViolation(null)).toBe(false);
   expect(isUniqueViolation(undefined)).toBe(false);
+});
+
+test("isForeignKeyViolation recognises a real blocked-delete rejection", async () => {
+  const admin = createAdminClient();
+  const sku = `AB-FK-${runId}`;
+
+  const item = await createItem(admin, ACTOR_ID, {
+    sku,
+    name: "FK test item",
+    categoryId,
+    unit: "pcs",
+  });
+  createdItemIds.push(item.id);
+
+  const { error } = await admin.from("categories").delete().eq("id", categoryId);
+
+  expect(error).not.toBeNull();
+  expect(isForeignKeyViolation(error)).toBe(true);
+});
+
+test("isForeignKeyViolation is false for other failures", () => {
+  expect(isForeignKeyViolation({ code: "23505", message: "duplicate" })).toBe(
+    false
+  );
+  expect(isForeignKeyViolation(new Error("boom"))).toBe(false);
+  expect(isForeignKeyViolation(null)).toBe(false);
+  expect(isForeignKeyViolation(undefined)).toBe(false);
 });
