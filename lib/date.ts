@@ -68,3 +68,27 @@ export function manilaTime(isoTimestamp: string): string {
     hour12: true,
   }).format(new Date(isoTimestamp));
 }
+
+/**
+ * A timestamp (e.g. `audit_log.created_at`) as a full Asia/Manila date and
+ * time — `"11/23/2026, 1:54:21 AM"` — for screens that need the date
+ * alongside the time, not just one or the other (see `manilaToday`/
+ * `manilaTime` for those). Same reasoning as both: a bare
+ * `new Date(value).toLocaleString()` renders in the server process's
+ * default time zone (UTC on Vercel), not Asia/Manila — this is what the
+ * Activity page's audit log display used before it was fixed to call
+ * this instead, which read a 1:54 AM Manila event as "5:54 PM" the
+ * previous day.
+ */
+export function manilaDateTime(isoTimestamp: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: SHOP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(new Date(isoTimestamp));
+}

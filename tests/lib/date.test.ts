@@ -1,4 +1,4 @@
-import { manilaToday, manilaTime, SHOP_TIME_ZONE, isFutureDate } from "@/lib/date";
+import { manilaToday, manilaTime, manilaDateTime, SHOP_TIME_ZONE, isFutureDate } from "@/lib/date";
 
 test("manilaToday formats as YYYY-MM-DD", () => {
   expect(manilaToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -51,6 +51,17 @@ test("manilaTime pads single-digit minutes but not the hour", () => {
 test("manilaTime formats a PM time correctly", () => {
   // 2026-11-19T06:30:00Z is 14:30 (2:30 PM) on 2026-11-19 in Manila.
   expect(manilaTime("2026-11-19T06:30:00Z")).toBe("2:30 PM");
+});
+
+// The exact bug report: the Owner created an account at 11/23/2026 1:54 AM
+// Manila time; the Activity page's own ad-hoc `new Date(value).toLocaleString()`
+// (no timeZone option) rendered it as "11/22/2026, 5:54:21 PM" instead —
+// the server's runtime default (UTC on Vercel) is 8 hours behind Manila.
+// Pinned here against the real instant so this regresses loudly if the
+// Activity page's date+time formatting ever stops routing through this
+// single source of truth.
+test("manilaDateTime formats a timestamptz string as a full Asia/Manila date and time", () => {
+  expect(manilaDateTime("2026-11-22T17:54:21.000Z")).toBe("11/23/2026, 1:54:21 AM");
 });
 
 test("isFutureDate is true for a date after today", () => {

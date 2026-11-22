@@ -8,12 +8,9 @@ import {
   ACTIONS,
 } from "@/lib/activity";
 import { listItems } from "@/lib/items";
+import { manilaDateTime } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { SortLinkHeader } from "@/components/sortable-header";
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
-}
 
 /**
  * Owner-only activity/audit log screen (gated by `isOwnerOnlyRoute` in the
@@ -176,7 +173,7 @@ export default async function ActivityPage({
           <tbody className="divide-y divide-border">
             {sortedEntries.map((entry) => (
               <tr key={entry.id} className="text-brand-ink transition-colors hover:bg-muted/40">
-                <td className="py-2">{formatDate(entry.createdAt)}</td>
+                <td className="py-2">{manilaDateTime(entry.createdAt)}</td>
                 <td className="py-2">{actorLabel(entry.actorId, actorNamesById)}</td>
                 <td className="py-2">{entry.action}</td>
                 <td className="py-2">{entry.summary}</td>
