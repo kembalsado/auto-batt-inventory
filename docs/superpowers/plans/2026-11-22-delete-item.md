@@ -116,6 +116,7 @@ git commit -m "feat: add deleteItem to lib/items.ts"
 
 **Files:**
 - Create: `app/api/items/[id]/route.ts`
+- Create: `supabase/migrations/0020_items_delete_rls.sql` — added during execution; see ledger (`Task 2: Ruling`). `items` RLS (0005_items_rls.sql) shipped with no delete policy at all, so an authenticated user's delete silently affected 0 rows regardless of application code. Adds `items_delete_authenticated`, `to authenticated using (true)`, matching items' existing open select/insert/update policies.
 - Test: `tests/api/items.test.ts` (new file)
 
 **Interfaces:**

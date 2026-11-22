@@ -43,6 +43,16 @@ Requested directly: "I want 'Delete Item' option inside the Edit item page."
   item referencing them blocks their delete the same way) and is already
   handled by `lib/errors.ts`'s `isForeignKeyViolation` plus a friendly 400
   in `app/api/categories/[id]/route.ts` / `app/api/makes/[id]/route.ts`.
+- **Found during implementation:** `items` RLS (`supabase/migrations/
+  0005_items_rls.sql`) deliberately shipped with no DELETE policy at all
+  ("Delete isn't supported (YAGNI...)"). A signed-in user's delete via the
+  session-bound server client therefore affected 0 rows regardless of
+  application code — not an FK error. Fixed by `supabase/migrations/
+  0020_items_delete_rls.sql`, which adds `items_delete_authenticated`
+  (`to authenticated using (true)`), matching items' existing open
+  select/insert/update policies rather than the owner-only shape used for
+  categories/car_makes delete. The FK constraint above remains the real
+  safety net for items with history, independent of this RLS policy.
   This feature follows that exact, already-reviewed pattern rather than
   inventing a new one.
 - Item edit/update today has no owner-only gate (any signed-in user can
