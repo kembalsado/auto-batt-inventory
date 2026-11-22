@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { recordStockOut, InsufficientStockError } from "@/lib/movements";
-import { manilaToday } from "@/lib/date";
+import { manilaToday, isFutureDate } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,9 @@ async function addStockOut(formData: FormData) {
   }
   if (!movementDate || !Number.isFinite(qty) || qty <= 0) {
     redirect(`/items/${itemId}?outError=invalid-qty`);
+  }
+  if (isFutureDate(movementDate)) {
+    redirect(`/items/${itemId}?outError=future-date`);
   }
 
   const supabase = await createServerClient();
@@ -133,6 +136,7 @@ export function StockOutForm({
           name="movementDate"
           type="date"
           defaultValue={today}
+          max={today}
           required
           className="h-11"
         />
