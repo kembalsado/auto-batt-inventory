@@ -32,12 +32,11 @@ export interface MovementRow {
 // whole thing lexicographically sorts by date first and falls back to time
 // only when dates tie — one string accessor, no tuple/array comparator.
 const sortAccessors: Record<
-  "date" | "type" | "qty" | "note" | "status",
+  "date" | "amount" | "note" | "status",
   (row: MovementRow) => string | number
 > = {
   date: (row) => `${row.movementDate}_${row.createdAt}`,
-  type: (row) => row.type,
-  qty: (row) => row.quantity,
+  amount: (row) => row.quantity,
   note: (row) => row.note ?? "",
   status: (row) => (row.voidedAt ? 1 : 0),
 };
@@ -172,16 +171,16 @@ export function MovementsList({
               onClick={() => toggle("date")}
             />
             <SortButtonHeader
-              label="Type"
+              label="IN"
               thClassName="py-1 pr-3"
-              direction={sortKey === "type" ? direction : "none"}
-              onClick={() => toggle("type")}
+              direction={sortKey === "amount" ? direction : "none"}
+              onClick={() => toggle("amount")}
             />
             <SortButtonHeader
-              label="Qty"
+              label="OUT"
               thClassName="py-1 pr-3"
-              direction={sortKey === "qty" ? direction : "none"}
-              onClick={() => toggle("qty")}
+              direction={sortKey === "amount" ? direction : "none"}
+              onClick={() => toggle("amount")}
             />
             <SortButtonHeader
               label="Note"
@@ -218,8 +217,12 @@ export function MovementsList({
                 }
               >
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.movementDate}</td>
-                <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.type}</td>
-                <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.quantity}</td>
+                <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>
+                  {m.type === "IN" ? m.quantity : ""}
+                </td>
+                <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>
+                  {m.type === "OUT" ? m.quantity : ""}
+                </td>
                 <td className={`py-1 pr-3 ${voided ? "line-through" : ""}`}>{m.note ?? ""}</td>
                 <td className="py-1 pr-3">{voided ? "Voided" : ""}</td>
                 <td className="py-1 pr-3">
@@ -246,11 +249,10 @@ export function MovementsList({
               key={m.id}
               className={`rounded-lg border border-border bg-card p-3 text-sm ${voided ? "text-muted-foreground" : "text-brand-ink"}`}
             >
-              <div className={`flex items-center justify-between ${voided ? "line-through" : ""}`}>
-                <span className="font-medium">
-                  {m.type} · {m.quantity}
-                </span>
-                <span className="text-xs">{m.movementDate}</span>
+              <div className={`flex items-center justify-between gap-2 ${voided ? "line-through" : ""}`}>
+                <span className="font-medium">{m.type === "IN" ? `IN ${m.quantity}` : ""}</span>
+                <span className="text-xs text-muted-foreground">{m.movementDate}</span>
+                <span className="font-medium">{m.type === "OUT" ? `OUT ${m.quantity}` : ""}</span>
               </div>
               {m.note && (
                 <p className={`mt-1 text-xs ${voided ? "line-through" : "text-muted-foreground"}`}>

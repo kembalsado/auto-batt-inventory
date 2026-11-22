@@ -58,6 +58,7 @@ async function voidMovementAction(movementId: string): Promise<VoidActionResult>
 const STOCK_ERROR_MESSAGES: Record<string, string> = {
   "invalid-qty": "Enter a quantity greater than zero, and a valid date.",
   "invalid-cost": "Enter a unit cost of zero or more.",
+  "future-date": "Date can't be in the future.",
 };
 
 /**

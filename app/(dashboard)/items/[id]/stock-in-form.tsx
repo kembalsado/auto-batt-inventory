@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { recordStockIn } from "@/lib/movements";
-import { manilaToday } from "@/lib/date";
+import { manilaToday, isFutureDate } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,9 @@ async function addStockIn(formData: FormData) {
   }
   if (!batchDate || !Number.isFinite(qty) || qty <= 0) {
     redirect(`/items/${itemId}?inError=invalid-qty`);
+  }
+  if (isFutureDate(batchDate)) {
+    redirect(`/items/${itemId}?inError=future-date`);
   }
   if (!Number.isFinite(unitCost) || unitCost < 0) {
     redirect(`/items/${itemId}?inError=invalid-cost`);
@@ -120,6 +123,7 @@ export function StockInForm({
           name="batchDate"
           type="date"
           defaultValue={today}
+          max={today}
           required
           className="h-11"
         />
