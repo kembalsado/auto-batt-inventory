@@ -50,6 +50,15 @@ afterAll(async () => {
   // them from audit_log, but items must go before categories isn't
   // required here since category_id has no ON DELETE restrict... delete
   // items first anyway to be safe.
+  //
+  // batches/stock_movements.item_id also reference items with no cascade
+  // — a single `items.delete().in(...)` is one SQL statement, so if ANY
+  // tracked id still has batch/movement rows (the deleteItem
+  // stock-history-blocked test's item), Postgres rolls back that whole
+  // statement and deletes NOTHING, including every other otherwise-
+  // deletable id in the same `in()` list. Clear history first.
+  await admin.from("stock_movements").delete().in("item_id", createdItemIds);
+  await admin.from("batches").delete().in("item_id", createdItemIds);
   await admin.from("items").delete().in("id", createdItemIds);
   await admin.from("car_makes").delete().in("id", createdMakeIds);
   await admin.from("categories").delete().in("id", createdCategoryIds);

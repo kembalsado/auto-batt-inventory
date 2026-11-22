@@ -16,6 +16,10 @@ export const ACTIONS = [
   // from this list until the branch-wide review, same gap "user.created"
   // below once had: the rows were being recorded but unfilterable.
   "item.updated",
+  // Written by deleteItem (lib/items.ts) for the Edit Item page's delete
+  // action — added alongside it this time, not after the fact like
+  // item.updated/user.created above.
+  "item.deleted",
   "category.created",
   // Written by updateCategory (lib/categories.ts) for the Categories
   // page's inline rename — missing from this list until the final review,
