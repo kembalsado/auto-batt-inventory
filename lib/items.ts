@@ -119,6 +119,39 @@ export async function updateItem(
   return data;
 }
 
+/**
+ * Deletes an item and records an audit_log entry for it. Mirrors
+ * `deleteCategory` (lib/categories.ts). `batches.item_id` and
+ * `stock_movements.item_id` both reference `items (id)` with no
+ * cascade, so the database itself rejects deleting an item that's ever
+ * had stock in or out (SQLSTATE 23503) — surfaced here as a thrown
+ * error (callers check it with `isForeignKeyViolation`).
+ */
+export async function deleteItem(
+  supabase: SupabaseClient,
+  actorId: string,
+  itemId: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("items")
+    .delete()
+    .eq("id", itemId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  await recordAudit(supabase, {
+    actorId,
+    action: "item.deleted",
+    entityType: "item",
+    entityId: itemId,
+    summary: `Deleted item ${data.sku}`,
+  });
+}
+
 /** Lists all items, alphabetically by name. */
 export async function listItems(supabase: SupabaseClient): Promise<Item[]> {
   const { data, error } = await supabase

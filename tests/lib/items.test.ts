@@ -5,8 +5,10 @@ import {
   createItem,
   listItems,
   updateItem,
+  deleteItem,
   listDistinctModelsAndVariants,
 } from "@/lib/items";
+import { recordStockIn } from "@/lib/movements";
 import { randomUUID } from "node:crypto";
 
 // A real profile row is required: audit_log.actor_id has a FK to
@@ -188,4 +190,50 @@ test("listDistinctModelsAndVariants on a table with no model/variant values retu
   const result = await listDistinctModelsAndVariants(supabase);
   expect(Array.isArray(result.models)).toBe(true);
   expect(Array.isArray(result.variants)).toBe(true);
+});
+
+test("deleteItem removes an item with no history and records an audit log entry", async () => {
+  const supabase = createAdminClient();
+  const item = await createItem(supabase, ASSISTANT_ID, {
+    sku: `AB-DEL-OK-${runId}`,
+    name: "Delete Me",
+    categoryId,
+    unit: "pcs",
+  });
+
+  await deleteItem(supabase, ASSISTANT_ID, item.id);
+
+  const { data } = await supabase.from("items").select("id").eq("id", item.id).maybeSingle();
+  expect(data).toBeNull();
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", item.id)
+    .eq("action", "item.deleted")
+    .single();
+  expect(log?.summary).toContain(`AB-DEL-OK-${runId}`);
+});
+
+test("deleteItem rejects deleting an item that already has stock history", async () => {
+  const supabase = createAdminClient();
+  const item = await createItem(supabase, ASSISTANT_ID, {
+    sku: `AB-DEL-BLOCKED-${runId}`,
+    name: "Blocks delete",
+    categoryId,
+    unit: "pcs",
+  });
+  createdItemIds.push(item.id);
+
+  await recordStockIn(supabase, ASSISTANT_ID, {
+    itemId: item.id,
+    qty: 5,
+    unitCost: 10,
+    batchDate: "2026-01-01",
+  });
+
+  await expect(deleteItem(supabase, ASSISTANT_ID, item.id)).rejects.toThrow();
+
+  const { data } = await supabase.from("items").select("id").eq("id", item.id).maybeSingle();
+  expect(data).not.toBeNull();
 });
