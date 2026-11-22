@@ -18,6 +18,14 @@ const createdCategoryIds: string[] = [];
 
 afterAll(async () => {
   const admin = createAdminClient();
+  // batches/stock_movements.item_id reference items with no cascade — a
+  // single `items.delete().in(...)` is one SQL statement, so if ANY
+  // tracked id still has batch/movement rows (the blocked-delete test's
+  // item), Postgres rolls back that whole statement and deletes NOTHING,
+  // including every other otherwise-deletable id in the same `in()`
+  // list. Clear history first so this cleanup can't be all-or-nothing.
+  await admin.from("stock_movements").delete().in("item_id", createdItemIds);
+  await admin.from("batches").delete().in("item_id", createdItemIds);
   await admin.from("items").delete().in("id", createdItemIds);
   await admin.from("categories").delete().in("id", createdCategoryIds);
   await admin.from("audit_log").delete().in("actor_id", createdUserIds);
