@@ -1,4 +1,4 @@
-import { manilaToday, manilaTime, SHOP_TIME_ZONE } from "@/lib/date";
+import { manilaToday, manilaTime, SHOP_TIME_ZONE, isFutureDate } from "@/lib/date";
 
 test("manilaToday formats as YYYY-MM-DD", () => {
   expect(manilaToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -51,4 +51,16 @@ test("manilaTime pads single-digit minutes but not the hour", () => {
 test("manilaTime formats a PM time correctly", () => {
   // 2026-11-19T06:30:00Z is 14:30 (2:30 PM) on 2026-11-19 in Manila.
   expect(manilaTime("2026-11-19T06:30:00Z")).toBe("2:30 PM");
+});
+
+test("isFutureDate is true for a date after today", () => {
+  expect(isFutureDate("2026-11-24", "2026-11-23")).toBe(true);
+});
+
+test("isFutureDate is false for today itself", () => {
+  expect(isFutureDate("2026-11-23", "2026-11-23")).toBe(false);
+});
+
+test("isFutureDate is false for a date before today", () => {
+  expect(isFutureDate("2026-11-22", "2026-11-23")).toBe(false);
 });

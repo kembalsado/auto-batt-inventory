@@ -37,6 +37,21 @@ export function manilaToday(now: Date = new Date()): string {
 }
 
 /**
+ * True when `dateStr` (a plain `YYYY-MM-DD` date, e.g. `batch_date` or
+ * `movement_date`) falls after `today`. Plain lexicographic string
+ * comparison is safe here — `YYYY-MM-DD` sorts the same way
+ * lexicographically as chronologically.
+ *
+ * `today` defaults to `manilaToday()` so a production caller just
+ * validates the date it has in hand; tests pin `today` explicitly
+ * instead of relying on the real clock, the same pattern `manilaToday`'s
+ * own `now` parameter already uses.
+ */
+export function isFutureDate(dateStr: string, today: string = manilaToday()): boolean {
+  return dateStr > today;
+}
+
+/**
  * A timestamp (e.g. `stock_movements.created_at`) as a 12-hour Asia/Manila
  * clock time — `"4:02 AM"` — for display next to an individual movement,
  * same time zone every other "what day/time is it" decision in this app
