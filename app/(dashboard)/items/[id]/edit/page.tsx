@@ -7,6 +7,7 @@ import { isUniqueViolation } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DeleteItemButton } from "./delete-item-button";
 
 // Every field this form submits, as its raw (trimmed, still-a-string) form
 // value — used both to call updateItem (after the usual null-coalescing
@@ -353,6 +354,8 @@ export default async function EditItemPage({
           Save changes
         </Button>
       </form>
+
+      <DeleteItemButton itemId={item.id} sku={item.sku} name={item.name} />
     </div>
   );
 }
