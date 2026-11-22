@@ -51,3 +51,33 @@ test("shows the server's error inline and does not navigate away on failure", as
   expect(await screen.findByText(/stock history/i)).toBeInTheDocument();
   expect(push).not.toHaveBeenCalled();
 });
+
+test("the inline error is announced to assistive tech", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: false,
+    json: async () => ({ error: "Can't delete — this item has stock history." }),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<DeleteItemButton itemId="item-1" sku="AB-001" name="12V Battery" />);
+  fireEvent.click(screen.getByRole("button", { name: /delete item/i }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(/stock history/i);
+});
+
+test("shows a session-expired error and does not navigate when the request is redirected to /login", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const fetchMock = vi.fn().mockResolvedValue({ ok: false, type: "opaqueredirect" });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<DeleteItemButton itemId="item-1" sku="AB-001" name="12V Battery" />);
+  fireEvent.click(screen.getByRole("button", { name: /delete item/i }));
+
+  expect(await screen.findByText(/session expired/i)).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/items/item-1",
+    expect.objectContaining({ method: "DELETE", redirect: "manual" })
+  );
+  expect(push).not.toHaveBeenCalled();
+});

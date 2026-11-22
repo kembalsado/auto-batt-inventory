@@ -1,7 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
-import { describeError, isUniqueViolation, isForeignKeyViolation } from "@/lib/errors";
+import {
+  describeError,
+  isUniqueViolation,
+  isForeignKeyViolation,
+  isNotFoundError,
+} from "@/lib/errors";
 import { randomUUID } from "node:crypto";
 
 const runId = randomUUID().slice(0, 8);
@@ -137,4 +142,27 @@ test("isForeignKeyViolation is false for other failures", () => {
   expect(isForeignKeyViolation(new Error("boom"))).toBe(false);
   expect(isForeignKeyViolation(null)).toBe(false);
   expect(isForeignKeyViolation(undefined)).toBe(false);
+});
+
+test("isNotFoundError recognises a real zero-rows .single() rejection", async () => {
+  const admin = createAdminClient();
+
+  const { error } = await admin
+    .from("items")
+    .delete()
+    .eq("id", "00000000-0000-0000-0000-000000000000")
+    .select()
+    .single();
+
+  expect(error).not.toBeNull();
+  expect(isNotFoundError(error)).toBe(true);
+});
+
+test("isNotFoundError is false for other failures", () => {
+  expect(isNotFoundError({ code: "23503", message: "fk violation" })).toBe(
+    false
+  );
+  expect(isNotFoundError(new Error("boom"))).toBe(false);
+  expect(isNotFoundError(null)).toBe(false);
+  expect(isNotFoundError(undefined)).toBe(false);
 });

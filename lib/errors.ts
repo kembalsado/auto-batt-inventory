@@ -62,3 +62,14 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isForeignKeyViolation(err: unknown): boolean {
   return asDatabaseError(err)?.code === "23503";
 }
+
+/**
+ * True for PostgREST's "no rows" error (code PGRST116) — thrown by a
+ * `.single()` call whose preceding `update`/`delete` matched zero rows
+ * (the id doesn't exist, or RLS filtered it out). Distinguishes "there
+ * was nothing to act on" from a real database error, so a caller doesn't
+ * surface this error object's raw PostgREST sentence to the user.
+ */
+export function isNotFoundError(err: unknown): boolean {
+  return asDatabaseError(err)?.code === "PGRST116";
+}

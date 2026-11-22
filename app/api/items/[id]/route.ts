@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { deleteItem } from "@/lib/items";
-import { isForeignKeyViolation, describeError } from "@/lib/errors";
+import { isForeignKeyViolation, isNotFoundError, describeError } from "@/lib/errors";
 
 /**
  * DELETE /api/items/[id] — any signed-in user (no owner-only gate, same
@@ -36,6 +36,15 @@ export async function DELETE(
         {
           error:
             "Can't delete — this item has stock history. Only items with no batches or movements can be deleted.",
+        },
+        { status: 400 }
+      );
+    }
+    if (isNotFoundError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "This item no longer exists, or you don't have permission to delete it.",
         },
         { status: 400 }
       );

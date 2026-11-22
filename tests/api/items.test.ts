@@ -130,4 +130,27 @@ describe("DELETE /api/items/[id]", () => {
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/login");
   });
+
+  test("deleting an item that no longer exists gets a friendly 400, not a raw PostgREST message", async () => {
+    const admin = createAdminClient();
+    const { data: assistant } = await admin.auth.admin.createUser({
+      email: "test-items-route-4@example.com",
+      password: "test-password-123",
+      email_confirm: true,
+    });
+    createdUserIds.push(assistant!.user!.id);
+
+    const cookie = await signInCookieHeader("test-items-route-4@example.com", "test-password-123");
+
+    const res = await fetch(`${BASE_URL}/api/items/00000000-0000-0000-0000-000000000000`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe(
+      "This item no longer exists, or you don't have permission to delete it."
+    );
+  });
 });
