@@ -46,6 +46,16 @@ test("a voided row shows its quantity struck through in the populated column, an
   expect(cells[2]).toHaveTextContent("");
 });
 
+test("the mobile card labels which side is populated, not just position", () => {
+  const { container } = render(<MovementsList movements={movements} voidAction={vi.fn()} />);
+  const mobileSection = container.querySelector(".md\\:hidden") as HTMLElement;
+  expect(mobileSection.textContent).toContain("IN 5");
+  expect(mobileSection.textContent).toContain("OUT 2");
+  // The blank side must not pick up the other row's label either.
+  expect(mobileSection.textContent).not.toContain("OUT 5");
+  expect(mobileSection.textContent).not.toContain("IN 2");
+});
+
 test("search debounces before re-filtering", () => {
   vi.useFakeTimers();
   render(<MovementsList movements={movements} voidAction={vi.fn()} />);

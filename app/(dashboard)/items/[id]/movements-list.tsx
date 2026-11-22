@@ -250,9 +250,9 @@ export function MovementsList({
               className={`rounded-lg border border-border bg-card p-3 text-sm ${voided ? "text-muted-foreground" : "text-brand-ink"}`}
             >
               <div className={`flex items-center justify-between gap-2 ${voided ? "line-through" : ""}`}>
-                <span className="font-medium">{m.type === "IN" ? m.quantity : ""}</span>
+                <span className="font-medium">{m.type === "IN" ? `IN ${m.quantity}` : ""}</span>
                 <span className="text-xs text-muted-foreground">{m.movementDate}</span>
-                <span className="font-medium">{m.type === "OUT" ? m.quantity : ""}</span>
+                <span className="font-medium">{m.type === "OUT" ? `OUT ${m.quantity}` : ""}</span>
               </div>
               {m.note && (
                 <p className={`mt-1 text-xs ${voided ? "line-through" : "text-muted-foreground"}`}>
