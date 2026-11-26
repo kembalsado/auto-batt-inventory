@@ -9,6 +9,7 @@ import {
   BatchAlreadySoldError,
 } from "@/lib/movements";
 import { getItemStockSummary } from "@/lib/stock";
+import { listFitmentsForItem, formatFitment } from "@/lib/item-fitments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StockInForm } from "./stock-in-form";
@@ -91,7 +92,7 @@ export default async function ItemDetailPage({
 
   const { data: item } = await supabase
     .from("items")
-    .select("*, categories(name), car_makes(name)")
+    .select("*, categories(name)")
     .eq("id", id)
     .single();
 
@@ -99,7 +100,10 @@ export default async function ItemDetailPage({
     notFound();
   }
 
-  const summary = await getItemStockSummary(supabase, item.id);
+  const [summary, fitments] = await Promise.all([
+    getItemStockSummary(supabase, item.id),
+    listFitmentsForItem(supabase, item.id),
+  ]);
 
   const insufficientStockAvailable =
     outError === "insufficient" && available != null ? Number(available) : null;
@@ -128,38 +132,28 @@ export default async function ItemDetailPage({
         </span>
       </p>
 
-      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      <div className="mt-2">
         {item.categories?.name && (
-          <div>
-            <dt className="inline font-medium text-brand-ink">Category: </dt>
-            <dd className="inline">{item.categories.name}</dd>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-brand-ink">Category: </span>
+            {item.categories.name}
+          </p>
         )}
-        {item.car_makes?.name && (
-          <div>
-            <dt className="inline font-medium text-brand-ink">Make: </dt>
-            <dd className="inline">{item.car_makes.name}</dd>
-          </div>
-        )}
-        {item.model && (
-          <div>
-            <dt className="inline font-medium text-brand-ink">Model: </dt>
-            <dd className="inline">{item.model}</dd>
-          </div>
-        )}
-        {item.variant && (
-          <div>
-            <dt className="inline font-medium text-brand-ink">Variant: </dt>
-            <dd className="inline">{item.variant}</dd>
-          </div>
-        )}
-        {item.year && (
-          <div>
-            <dt className="inline font-medium text-brand-ink">Year: </dt>
-            <dd className="inline">{item.year}</dd>
-          </div>
-        )}
-      </dl>
+        <div className="mt-2">
+          <p className="text-sm font-medium text-brand-ink">Vehicles:</p>
+          {fitments.length === 0 ? (
+            <p className="mt-1 text-sm text-muted-foreground">No vehicles tagged</p>
+          ) : (
+            <div className="mt-1 flex flex-wrap gap-2">
+              {fitments.map((fitment) => (
+                <Badge key={fitment.id} variant="secondary">
+                  {formatFitment(fitment)}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       <StockInForm itemId={item.id} errorMessage={stockInError} />
       <StockOutForm
