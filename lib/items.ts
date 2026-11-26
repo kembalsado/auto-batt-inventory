@@ -1,7 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordAudit } from "@/lib/audit";
+import { replaceFitmentsForItem, type FitmentInput } from "@/lib/item-fitments";
 
-/** One `items` row. See supabase/migrations/0001_init.sql. */
+/**
+ * One `items` row. See supabase/migrations/0001_init.sql. Vehicle fitment
+ * data (make/model/variant/year) no longer lives on this row — it's
+ * multi-valued, in `item_fitments` (supabase/migrations/0022_item_fitments.sql,
+ * 0023_backfill_and_drop_item_vehicle_columns.sql), accessed via
+ * `lib/item-fitments.ts`.
+ */
 export interface Item {
   id: string;
   sku: string;
@@ -12,23 +19,20 @@ export interface Item {
   is_active: boolean;
   created_by: string | null;
   created_at: string;
-  make_id: string | null;
-  model: string | null;
-  variant: string | null;
-  year: number | null;
 }
 
-/** Fields accepted by `createItem` (and, as a full replacement set, `updateItem`). */
+/**
+ * Fields accepted by `createItem` (and, as a full replacement set,
+ * `updateItem`). `fitments`, when provided, is passed through to
+ * `replaceFitmentsForItem` — omitted (or `[]`) means "no vehicle tags".
+ */
 export interface CreateItemInput {
   sku: string;
   name: string;
   categoryId: string | null;
   unit: string;
   lowStockThreshold?: number | null;
-  makeId?: string | null;
-  model?: string | null;
-  variant?: string | null;
-  year?: number | null;
+  fitments?: FitmentInput[];
 }
 
 /**
@@ -50,10 +54,6 @@ export async function createItem(
       unit: input.unit,
       low_stock_threshold: input.lowStockThreshold ?? null,
       created_by: actorId,
-      make_id: input.makeId ?? null,
-      model: input.model ?? null,
-      variant: input.variant ?? null,
-      year: input.year ?? null,
     })
     .select()
     .single();
@@ -61,6 +61,8 @@ export async function createItem(
   if (error) {
     throw error;
   }
+
+  await replaceFitmentsForItem(supabase, data.id, input.fitments ?? []);
 
   await recordAudit(supabase, {
     actorId,
@@ -95,10 +97,6 @@ export async function updateItem(
       category_id: input.categoryId,
       unit: input.unit,
       low_stock_threshold: input.lowStockThreshold ?? null,
-      make_id: input.makeId ?? null,
-      model: input.model ?? null,
-      variant: input.variant ?? null,
-      year: input.year ?? null,
     })
     .eq("id", itemId)
     .select()
@@ -107,6 +105,8 @@ export async function updateItem(
   if (error) {
     throw error;
   }
+
+  await replaceFitmentsForItem(supabase, itemId, input.fitments ?? []);
 
   await recordAudit(supabase, {
     actorId,
@@ -234,44 +234,4 @@ export async function getItemBatchesForViewer(
     delete stripped.unit_cost;
     return stripped;
   });
-}
-
-/**
- * Distinct, non-empty `model` and `variant` values across all items,
- * sorted, for `<datalist>` suggestions on the add/edit item forms.
- *
- * Fetches both columns in a single unfiltered query and filters/dedupes
- * each column independently in application code, rather than filtering
- * server-side with `.not("model", "is", null).not("variant", "is", null)`
- * — that would require BOTH columns to be non-null on the same row, so a
- * row with a Model set but no Variant (or vice versa) would be silently
- * dropped from both lists instead of contributing to the one it has a
- * value for.
- */
-export async function listDistinctModelsAndVariants(
-  supabase: SupabaseClient
-): Promise<{ models: string[]; variants: string[] }> {
-  const { data, error } = await supabase.from("items").select("model, variant");
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = (data ?? []) as { model: string | null; variant: string | null }[];
-
-  const models = new Set<string>();
-  const variants = new Set<string>();
-  for (const row of rows) {
-    if (row.model) {
-      models.add(row.model);
-    }
-    if (row.variant) {
-      variants.add(row.variant);
-    }
-  }
-
-  return {
-    models: Array.from(models).sort(),
-    variants: Array.from(variants).sort(),
-  };
 }

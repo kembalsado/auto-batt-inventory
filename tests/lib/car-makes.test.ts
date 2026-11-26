@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createCarMake, listCarMakes, updateCarMake, deleteCarMake } from "@/lib/car-makes";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
+import { replaceFitmentsForItem } from "@/lib/item-fitments";
 import { randomUUID } from "node:crypto";
 
 // Every fixture name below gets this suffix so it can never collide with
@@ -138,13 +139,17 @@ test("deleteCarMake rejects deleting a car make that's still referenced by an it
     sku: `AB-MAKE-INUSE-${make.id.slice(0, 8)}`,
     name: "Blocks delete",
     categoryId: category.id,
-    makeId: make.id,
     unit: "pcs",
   });
+  await replaceFitmentsForItem(supabase, item.id, [
+    { makeId: make.id, model: null, variant: null, yearFrom: null, yearTo: null },
+  ]);
 
   try {
     await expect(deleteCarMake(supabase, OWNER_ID, make.id)).rejects.toThrow();
   } finally {
+    // The item's cascade delete (item_fitments.item_id references items
+    // with on delete cascade) takes the fitment row with it.
     await supabase.from("items").delete().eq("id", item.id);
   }
 });

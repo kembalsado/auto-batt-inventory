@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { createItem } from "@/lib/items";
+import { replaceFitmentsForItem } from "@/lib/item-fitments";
 
 // This file exercises the real `PATCH`/`DELETE /api/makes/[id]` routes
 // over HTTP (not by importing the handlers directly), because the thing
@@ -252,10 +253,12 @@ describe("DELETE /api/makes/[id]", () => {
       sku: `AB-ROUTE-MAKE-INUSE-${make!.id.slice(0, 8)}`,
       name: "Blocks route delete",
       categoryId: category!.id,
-      makeId: make!.id,
       unit: "pcs",
     });
     createdItemIds.push(item.id);
+    await replaceFitmentsForItem(admin, item.id, [
+      { makeId: make!.id, model: null, variant: null, yearFrom: null, yearTo: null },
+    ]);
 
     const cookie = await signInCookieHeader(
       "test-make-route-owner-5@example.com",

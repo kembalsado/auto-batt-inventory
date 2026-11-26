@@ -238,22 +238,10 @@ test("RLS: an owner can update and delete a car_make directly; an assistant cann
   }
 });
 
-test("items has make_id, model, variant, year columns, all nullable", async () => {
+test("items no longer has make_id, model, variant, or year columns", async () => {
   const supabase = createAdminClient();
-  const { data: category } = await supabase
-    .from("categories")
-    .insert({ name: `schema-test-cat-${Date.now()}` })
-    .select()
-    .single();
-  const { data, error } = await supabase
-    .from("items")
-    .insert({ sku: `SCHEMA-TEST-${Date.now()}`, name: "Schema test item", category_id: category!.id })
-    .select("id, make_id, model, variant, year")
-    .single();
-  expect(error).toBeNull();
-  expect(data).toMatchObject({ make_id: null, model: null, variant: null, year: null });
-  await supabase.from("items").delete().eq("id", data!.id);
-  await supabase.from("categories").delete().eq("id", category!.id);
+  const { error } = await supabase.from("items").select("make_id").limit(1);
+  expect(error).not.toBeNull(); // column doesn't exist
 });
 
 test("item_fitments has item_id, make_id (nullable), model, variant, year_from, year_to columns", async () => {

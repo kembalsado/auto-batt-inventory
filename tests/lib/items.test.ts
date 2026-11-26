@@ -1,13 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createCarMake } from "@/lib/car-makes";
-import {
-  createItem,
-  listItems,
-  updateItem,
-  deleteItem,
-  listDistinctModelsAndVariants,
-} from "@/lib/items";
+import { createItem, listItems, updateItem, deleteItem } from "@/lib/items";
+import { listFitmentsForItem } from "@/lib/item-fitments";
 import { recordStockIn } from "@/lib/movements";
 import { randomUUID } from "node:crypto";
 
@@ -127,31 +122,25 @@ test("listItems returns created items", async () => {
   expect(skus).toContain(sku);
 });
 
-test("createItem accepts and stores make_id, model, variant, and year", async () => {
+test("createItem writes fitments via replaceFitmentsForItem and they're readable afterward", async () => {
   const supabase = createAdminClient();
-  const make = await createCarMake(supabase, ASSISTANT_ID, `ItemsTest-Make-${runId}`);
+  const make = await createCarMake(supabase, ASSISTANT_ID, `ItemsFitment-Make-${runId}`);
   createdMakeIds.push(make.id);
   const item = await createItem(supabase, ASSISTANT_ID, {
-    sku: `ITEMS-VEH-${runId}`, name: "Vehicle item", categoryId, unit: "pcs",
-    makeId: make.id, model: "Vios", variant: "1.3 E CVT", year: 2017,
+    sku: `ITEMS-FIT-${runId}`, name: "Vehicle item", categoryId, unit: "pcs",
+    fitments: [{ makeId: make.id, model: "Vios", variant: "1.3 E CVT", yearFrom: 2017, yearTo: 2017 }],
   });
   createdItemIds.push(item.id);
-  expect(item.make_id).toBe(make.id);
-  expect(item.model).toBe("Vios");
-  expect(item.variant).toBe("1.3 E CVT");
-  expect(item.year).toBe(2017);
+  const fitments = await listFitmentsForItem(supabase, item.id);
+  expect(fitments).toHaveLength(1);
+  expect(fitments[0]).toMatchObject({ makeId: make.id, model: "Vios", variant: "1.3 E CVT", yearFrom: 2017, yearTo: 2017 });
 });
 
-test("createItem defaults vehicle fields to null when omitted", async () => {
+test("createItem with no fitments leaves the item with zero tags", async () => {
   const supabase = createAdminClient();
-  const item = await createItem(supabase, ASSISTANT_ID, {
-    sku: `ITEMS-GEN-${runId}`, name: "General item", categoryId, unit: "pcs",
-  });
+  const item = await createItem(supabase, ASSISTANT_ID, { sku: `ITEMS-NOFIT-${runId}`, name: "General item", categoryId, unit: "pcs" });
   createdItemIds.push(item.id);
-  expect(item.make_id).toBeNull();
-  expect(item.model).toBeNull();
-  expect(item.variant).toBeNull();
-  expect(item.year).toBeNull();
+  expect(await listFitmentsForItem(supabase, item.id)).toEqual([]);
 });
 
 test("updateItem changes an item's fields and writes an item.updated audit entry", async () => {
@@ -161,10 +150,9 @@ test("updateItem changes an item's fields and writes an item.updated audit entry
   });
   createdItemIds.push(item.id);
   const updated = await updateItem(supabase, ASSISTANT_ID, item.id, {
-    sku: item.sku, name: "After", categoryId, unit: "pcs", model: "Civic",
+    sku: item.sku, name: "After", categoryId, unit: "pcs",
   });
   expect(updated.name).toBe("After");
-  expect(updated.model).toBe("Civic");
   const { data: log } = await supabase
     .from("audit_log").select("*").eq("entity_id", item.id).eq("action", "item.updated").single();
   expect(log?.summary).toContain(item.sku);
@@ -178,27 +166,6 @@ test("updateItem rejects renaming an item's SKU to one that already exists", asy
   await expect(
     updateItem(supabase, ASSISTANT_ID, b.id, { sku: a.sku, name: "B", categoryId, unit: "pcs" })
   ).rejects.toThrow();
-});
-
-test("listDistinctModelsAndVariants returns sorted, deduplicated, non-null values", async () => {
-  const supabase = createAdminClient();
-  const i1 = await createItem(supabase, ASSISTANT_ID, { sku: `ITEMS-MV1-${runId}`, name: "x", categoryId, unit: "pcs", model: "Vios", variant: "E" });
-  const i2 = await createItem(supabase, ASSISTANT_ID, { sku: `ITEMS-MV2-${runId}`, name: "y", categoryId, unit: "pcs", model: "Vios", variant: "G" });
-  createdItemIds.push(i1.id, i2.id);
-  const { models, variants } = await listDistinctModelsAndVariants(supabase);
-  expect(models.filter((m) => m === "Vios")).toHaveLength(1); // deduplicated
-  expect(variants).toContain("E");
-  expect(variants).toContain("G");
-});
-
-test("listDistinctModelsAndVariants on a table with no model/variant values returns empty arrays, not an error", async () => {
-  const supabase = createAdminClient();
-  // Relies on the shared local DB potentially having other rows with
-  // model/variant set from other tests — assert shape/no-throw rather
-  // than exact emptiness: both are arrays and the call resolves.
-  const result = await listDistinctModelsAndVariants(supabase);
-  expect(Array.isArray(result.models)).toBe(true);
-  expect(Array.isArray(result.variants)).toBe(true);
 });
 
 test("deleteItem removes an item with no history and records an audit log entry", async () => {
