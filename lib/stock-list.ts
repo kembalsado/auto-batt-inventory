@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { listFitmentsForItems, summarizeFitments, type ItemFitment } from "@/lib/item-fitments";
 import { canSeeCost, type Role } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { isLowStockQty } from "@/lib/stock";
@@ -35,11 +36,20 @@ export interface StockListRow {
   /** `items.is_active`. Only ever false when `includeInactive` was set. */
   isActive: boolean;
   /**
-   * Make/model/variant/year joined with a single space, skipping whichever
-   * of those are unset — "—" when none are set at all. Never cost-gated;
-   * present on every row regardless of viewer role.
+   * The item's fitments (lib/item-fitments.ts), summarized for display by
+   * `summarizeFitments`: the first tag alone, or the first tag plus a
+   * count when there's more than one — "—" when the item has no
+   * fitments at all. Never cost-gated; present on every row regardless of
+   * viewer role.
    */
   vehicle: string;
+  /**
+   * Every fitment's formatted text, space-joined (`summarizeFitments`'s
+   * `searchText`) — empty string when the item has no fitments. Lets a
+   * client-side filter match a vehicle tag that isn't the one shown in
+   * `vehicle`.
+   */
+  vehicleSearchText: string;
   unitCost?: number;
   inventoryValue?: number;
 }
@@ -69,10 +79,6 @@ interface ItemWithCategoryRow {
   low_stock_threshold: number | null;
   is_active: boolean;
   categories: { name: string } | null;
-  model: string | null;
-  variant: string | null;
-  year: number | null;
-  car_makes: { name: string } | null;
 }
 
 /** Row shape read from the bulk `batches_for_viewer` query below. */
@@ -104,12 +110,14 @@ interface ViewerBatchRow {
  * Performance: this is a small, fixed number of bulk queries, not one
  * query per item — the exact N+1 pattern Task 12's review flagged for a
  * different page. One query lists every active item (joined to
- * categories); one query reads every remaining batch across all of those
- * items at once, through the cost-safe `batches_for_viewer` view (the
- * same view `getItemBatchesForViewer`, lib/items.ts, reads from — see
- * that function's docstring for why `batches` itself can't be queried for
+ * categories); one query bulk-fetches every item's fitments
+ * (`listFitmentsForItems`, lib/item-fitments.ts); one query reads every
+ * remaining batch across all of those items at once, through the
+ * cost-safe `batches_for_viewer` view (the same view
+ * `getItemBatchesForViewer`, lib/items.ts, reads from — see that
+ * function's docstring for why `batches` itself can't be queried for
  * `unit_cost` directly); one call to `getSettings`. Everything else is
- * plain application code combining those three results in memory.
+ * plain application code combining those results in memory.
  *
  * Batches are ordered `batch_date asc, id asc` per item — the same FIFO
  * ordering used everywhere else in this project (`getItemBatchesForViewer`,
@@ -131,7 +139,7 @@ export async function buildStockListRows(
   let itemsQuery = supabase
     .from("items")
     .select(
-      "id, sku, name, unit, low_stock_threshold, is_active, categories(name), model, variant, year, car_makes(name)"
+      "id, sku, name, unit, low_stock_threshold, is_active, categories(name)"
     )
     .order("name");
 
@@ -151,6 +159,11 @@ export async function buildStockListRows(
   const items = (itemsResult.data ?? []) as unknown as ItemWithCategoryRow[];
   const itemIds = items.map((item) => item.id);
   const showCost = canSeeCost(viewerRole, settings);
+
+  const fitmentsByItemId =
+    itemIds.length > 0
+      ? await listFitmentsForItems(supabase, itemIds)
+      : new Map<string, ItemFitment[]>();
 
   const batchesByItemId = new Map<string, ViewerBatchRow[]>();
   if (itemIds.length > 0) {
@@ -180,6 +193,10 @@ export async function buildStockListRows(
       0
     );
 
+    const { display, searchText } = summarizeFitments(
+      fitmentsByItemId.get(item.id) ?? []
+    );
+
     const base = {
       id: item.id,
       sku: item.sku,
@@ -195,10 +212,8 @@ export async function buildStockListRows(
         settings.defaultLowStockThreshold
       ),
       isActive: item.is_active,
-      vehicle:
-        [item.car_makes?.name, item.model, item.variant, item.year]
-          .filter(Boolean)
-          .join(" ") || "—",
+      vehicle: display,
+      vehicleSearchText: searchText,
     };
 
     if (!showCost) {

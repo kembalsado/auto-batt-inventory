@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createCategory } from "@/lib/categories";
 import { createCarMake } from "@/lib/car-makes";
 import { createItem } from "@/lib/items";
+import { replaceFitmentsForItem } from "@/lib/item-fitments";
 import { recordStockIn } from "@/lib/movements";
 import { getSettings, updateSettings, type AppSettings } from "@/lib/settings";
 import { buildStockListRows } from "@/lib/stock-list";
@@ -311,41 +312,38 @@ test("rows carry the item's category name and unit", async () => {
   expect(row?.name).toBe("12V Battery");
 });
 
-test("buildStockListRows computes a joined vehicle string when all fields are set", async () => {
+test("buildStockListRows shows the first tag alone when an item has exactly one fitment", async () => {
   const admin = createAdminClient();
   const make = await createCarMake(admin, OWNER_ID, `StockListTest-Make-${runId}`);
   createdMakeIds.push(make.id);
-  const item = await createItem(admin, OWNER_ID, {
-    sku: `${skuPrefix}-VEH`, name: "Vehicle item", categoryId, unit: "pcs",
-    makeId: make.id, model: "Vios", variant: "1.3 E CVT", year: 2017,
-  });
+  const item = await createItem(admin, OWNER_ID, { sku: `${skuPrefix}-VEH`, name: "Vehicle item", categoryId, unit: "pcs" });
   createdItemIds.push(item.id);
+  await replaceFitmentsForItem(admin, item.id, [{ makeId: make.id, model: "Vios", variant: "1.3 E CVT", yearFrom: 2017, yearTo: 2017 }]);
   const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
   const row = rows.find((r) => r.id === item.id);
   expect(row?.vehicle).toBe(`${make.name} Vios 1.3 E CVT 2017`);
 });
 
-test("buildStockListRows joins only the vehicle fields that are set, with no stray spaces", async () => {
+test("buildStockListRows shows the first tag plus a count, but search text covers every tag", async () => {
   const admin = createAdminClient();
-  const make = await createCarMake(admin, OWNER_ID, `StockListTest-Make2-${runId}`);
-  createdMakeIds.push(make.id);
-  const item = await createItem(admin, OWNER_ID, {
-    sku: `${skuPrefix}-PARTIAL`, name: "Partial vehicle item", categoryId, unit: "pcs",
-    makeId: make.id,
-  });
+  const item = await createItem(admin, OWNER_ID, { sku: `${skuPrefix}-MULTI`, name: "Multi vehicle item", categoryId, unit: "pcs" });
   createdItemIds.push(item.id);
+  await replaceFitmentsForItem(admin, item.id, [
+    { makeId: null, model: "Wigo", variant: null, yearFrom: null, yearTo: null },
+    { makeId: null, model: "Terra", variant: null, yearFrom: 2018, yearTo: 2021 },
+  ]);
   const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
   const row = rows.find((r) => r.id === item.id);
-  expect(row?.vehicle).toBe(make.name);
+  expect(row?.vehicle).toBe("Wigo +1");
+  expect(row?.vehicleSearchText).toContain("Terra 2018–2021");
 });
 
-test("buildStockListRows falls back to an em dash when no vehicle fields are set", async () => {
+test("buildStockListRows falls back to an em dash and empty search text when an item has no fitments", async () => {
   const admin = createAdminClient();
-  const item = await createItem(admin, OWNER_ID, {
-    sku: `${skuPrefix}-NOVEH`, name: "No vehicle item", categoryId, unit: "pcs",
-  });
+  const item = await createItem(admin, OWNER_ID, { sku: `${skuPrefix}-NOVEH`, name: "No vehicle item", categoryId, unit: "pcs" });
   createdItemIds.push(item.id);
   const rows = await buildStockListRows(admin, "owner", { includeInactive: true });
   const row = rows.find((r) => r.id === item.id);
   expect(row?.vehicle).toBe("—");
+  expect(row?.vehicleSearchText).toBe("");
 });
