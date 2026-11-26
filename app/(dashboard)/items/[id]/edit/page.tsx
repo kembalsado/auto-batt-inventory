@@ -1,6 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
-import { updateItem, listDistinctModelsAndVariants } from "@/lib/items";
+import { updateItem } from "@/lib/items";
+import {
+  parseFitmentsJson,
+  listDistinctModelsAndVariants,
+  listFitmentsForItem,
+} from "@/lib/item-fitments";
 import { listCategories } from "@/lib/categories";
 import { listCarMakes } from "@/lib/car-makes";
 import { isUniqueViolation } from "@/lib/errors";
@@ -8,24 +13,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DeleteItemButton } from "./delete-item-button";
+import { FitmentTagEditor, type FitmentChip } from "@/app/(dashboard)/items/fitment-tag-editor";
 
 // Every field this form submits, as its raw (trimmed, still-a-string) form
 // value — used both to call updateItem (after the usual null-coalescing
 // below) and, unparsed, to round-trip the user's actual input back onto an
 // error redirect via buildErrorRedirectParams. Keeping the raw strings separate
-// from the parsed/nulled values (categoryId, year, etc.) means the error
+// from the parsed/nulled values (categoryId, etc.) means the error
 // redirect always reflects exactly what was typed/selected, not a value
-// that's already been defaulted or parsed.
+// that's already been defaulted or parsed. `fitments` is the tag editor's
+// hidden-field JSON string, round-tripped the same way as every other
+// field — see app/(dashboard)/items/new/page.tsx for the identical
+// mechanism on the Add form.
 interface RawItemFormFields {
   sku: string;
   name: string;
   categoryId: string;
-  makeId: string;
-  model: string;
-  variant: string;
-  year: string;
   unit: string;
   lowStockThreshold: string;
+  fitments: string;
 }
 
 /**
@@ -60,25 +66,16 @@ async function updateItemAction(itemId: string, formData: FormData) {
   const lowStockThreshold = lowStockThresholdRaw
     ? Number(lowStockThresholdRaw)
     : null;
-  const makeIdRaw = String(formData.get("makeId") ?? "").trim();
-  const makeId = makeIdRaw || null;
-  const modelRaw = String(formData.get("model") ?? "").trim();
-  const model = modelRaw || null;
-  const variantRaw = String(formData.get("variant") ?? "").trim();
-  const variant = variantRaw || null;
-  const yearRaw = String(formData.get("year") ?? "").trim();
-  const year = yearRaw ? Number(yearRaw) : null;
+  const fitmentsRaw = String(formData.get("fitments") ?? "[]");
+  const fitments = parseFitmentsJson(fitmentsRaw);
 
   const rawFields: RawItemFormFields = {
     sku,
     name,
     categoryId: categoryIdRaw,
-    makeId: makeIdRaw,
-    model: modelRaw,
-    variant: variantRaw,
-    year: yearRaw,
     unit: unitRaw,
     lowStockThreshold: lowStockThresholdRaw,
+    fitments: fitmentsRaw,
   };
 
   if (!sku || !name) {
@@ -109,10 +106,7 @@ async function updateItemAction(itemId: string, formData: FormData) {
       categoryId,
       unit,
       lowStockThreshold,
-      makeId,
-      model,
-      variant,
-      year,
+      fitments,
     });
   } catch (error) {
     if (!isUniqueViolation(error)) {
@@ -145,12 +139,9 @@ export default async function EditItemPage({
     sku?: string;
     name?: string;
     categoryId?: string;
-    makeId?: string;
-    model?: string;
-    variant?: string;
-    year?: string;
     unit?: string;
     lowStockThreshold?: string;
+    fitments?: string;
   }>;
 }) {
   const { id } = await params;
@@ -159,12 +150,9 @@ export default async function EditItemPage({
     sku,
     name,
     categoryId,
-    makeId,
-    model,
-    variant,
-    year,
     unit,
     lowStockThreshold,
+    fitments: fitmentsRaw,
   } = await searchParams;
   const supabase = await createServerClient();
 
@@ -197,14 +185,46 @@ export default async function EditItemPage({
   const skuValue = fromError ? sku ?? "" : item.sku;
   const nameValue = fromError ? name ?? "" : item.name;
   const categoryIdValue = fromError ? categoryId ?? "" : item.category_id ?? "";
-  const makeIdValue = fromError ? makeId ?? "" : item.make_id ?? "";
-  const modelValue = fromError ? model ?? "" : item.model ?? "";
-  const variantValue = fromError ? variant ?? "" : item.variant ?? "";
-  const yearValue = fromError ? year ?? "" : item.year ?? "";
   const unitValue = fromError ? unit ?? "" : item.unit;
   const lowStockThresholdValue = fromError
     ? lowStockThreshold ?? ""
     : item.low_stock_threshold ?? "";
+
+  // On an error redirect, re-hydrate the chip list from the round-tripped
+  // JSON — each parsed entry gets a fresh client `key` here (mirroring the
+  // Add form), but keeps whatever `id` it already carried from the
+  // round-trip, so existing tags are still recognized as existing.
+  //
+  // On a fresh load (no error) there's no round-tripped `fitments` param,
+  // so instead fetch the item's actual fitments from the database and map
+  // each one to a chip using the fitment's own `id` as BOTH `key` and
+  // `id`. This is what lets `updateItem`'s diff-by-id logic in
+  // `replaceFitmentsForItem` tell "this tag already existed, leave it
+  // alone" apart from "this is a brand new tag the user just added" when
+  // the form is saved — using a fresh random `key` here instead would
+  // still render correctly, but would make every save delete and recreate
+  // every tag, churning `created_at` and breaking the "first tag = oldest
+  // created_at" ordering guarantee this feature depends on.
+  let initialFitments: FitmentChip[];
+  if (fromError) {
+    initialFitments = fitmentsRaw
+      ? parseFitmentsJson(fitmentsRaw).map((fitment) => ({
+          ...fitment,
+          key: crypto.randomUUID(),
+        }))
+      : [];
+  } else {
+    const existingFitments = await listFitmentsForItem(supabase, item.id);
+    initialFitments = existingFitments.map((fitment) => ({
+      key: fitment.id,
+      id: fitment.id,
+      makeId: fitment.makeId,
+      model: fitment.model,
+      variant: fitment.variant,
+      yearFrom: fitment.yearFrom,
+      yearTo: fitment.yearTo,
+    }));
+  }
 
   return (
     <div>
@@ -262,67 +282,12 @@ export default async function EditItemPage({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="makeId">Make</Label>
-          <select
-            id="makeId"
-            name="makeId"
-            defaultValue={makeIdValue}
-            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <option value="">None</option>
-            {makes.map((make) => (
-              <option key={make.id} value={make.id}>
-                {make.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="model">Model</Label>
-          <Input
-            id="model"
-            name="model"
-            list="model-suggestions"
-            defaultValue={modelValue}
-            placeholder="Optional"
-            className="h-11"
-          />
-          <datalist id="model-suggestions">
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="variant">Variant</Label>
-          <Input
-            id="variant"
-            name="variant"
-            list="variant-suggestions"
-            defaultValue={variantValue}
-            placeholder="Optional"
-            className="h-11"
-          />
-          <datalist id="variant-suggestions">
-            {variants.map((variant) => (
-              <option key={variant} value={variant} />
-            ))}
-          </datalist>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="year">Year</Label>
-          <Input
-            id="year"
-            name="year"
-            type="number"
-            min={1900}
-            max={new Date().getFullYear() + 1}
-            defaultValue={yearValue}
-            placeholder="Optional"
-            className="h-11"
+          <Label>Vehicle fitment</Label>
+          <FitmentTagEditor
+            makes={makes}
+            modelSuggestions={models}
+            variantSuggestions={variants}
+            initialFitments={initialFitments}
           />
         </div>
 
