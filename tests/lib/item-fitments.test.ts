@@ -49,6 +49,42 @@ test("parseFitmentsJson returns [] for empty/invalid input and parses a valid ar
     .toEqual([{ id: undefined, makeId: "m1", model: "Vios", variant: null, yearFrom: 2020, yearTo: 2020 }]);
 });
 
+test("parseFitmentsJson coerces an out-of-range year to null, keeping the rest of the entry", () => {
+  // The only gate on raw client-controlled JSON: a hand-crafted POST never
+  // passes through the editor's min/max-bounded inputs.
+  const nextYear = new Date().getFullYear() + 1;
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: 1200, yearTo: 99999 }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null }]);
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: -2020, yearTo: -2020 }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null }]);
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: 2020.5, yearTo: 2020.5 }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null }]);
+  // The bounds themselves are inclusive and still accepted.
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: 1900, yearTo: nextYear }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: 1900, yearTo: nextYear }]);
+});
+
+test("parseFitmentsJson coerces an inverted year range to null on both sides", () => {
+  // 2022–2018 would otherwise render as the nonsense "2022–2018"; which
+  // side is the typo isn't knowable, so neither is kept.
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: 2022, yearTo: 2018 }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null }]);
+  expect(parseFitmentsJson(JSON.stringify([{ model: "Vios", yearFrom: 2018, yearTo: 2022 }])))
+    .toEqual([{ id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: 2018, yearTo: 2022 }]);
+});
+
+test("parseFitmentsJson drops an entry whose every field is empty", () => {
+  // Mirrors the editor's "no blank tags" rule server-side. An entry that
+  // is blank only because its out-of-range years were just nulled out is
+  // dropped too.
+  expect(parseFitmentsJson(JSON.stringify([{ makeId: null, model: "", variant: "   ", yearFrom: null, yearTo: null }])))
+    .toEqual([]);
+  expect(parseFitmentsJson(JSON.stringify([{}, { model: "Vios" }]))).toEqual([
+    { id: undefined, makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null },
+  ]);
+  expect(parseFitmentsJson(JSON.stringify([{ yearFrom: 1200, yearTo: 1200 }]))).toEqual([]);
+});
+
 let ASSISTANT_ID: string;
 let categoryId: string;
 const createdItemIds: string[] = [];
@@ -107,6 +143,36 @@ test("listFitmentsForItems bulk-fetches fitments for multiple items in one call,
   const byItem = await listFitmentsForItems(admin, [itemA.id, itemB.id]);
   expect(byItem.get(itemA.id)?.map((f) => f.model)).toEqual(["Wigo"]);
   expect(byItem.get(itemB.id)?.map((f) => f.model)).toEqual(["Terra"]);
+});
+
+test("listFitmentsForItems chunks a long id list and merges every chunk's rows, still grouped per item", async () => {
+  // Exercises the CHUNK_SIZE (150) path in lib/item-fitments.ts without
+  // creating 150+ real items: the id list is padded with random
+  // non-existent UUIDs so that the real items land in *different* chunks
+  // (index 0 and index 170). Before chunking existed this query went out
+  // as one `.in("item_id", [...])` with 200 UUIDs — long enough to risk
+  // the HTTP 414 lib/reports.ts measured at ~216 — and a merge bug across
+  // chunks would show up here as a missing item or missing fitments.
+  const admin = createAdminClient();
+  const first = await newItem(`FIT-CHUNK-A-${runId}`);
+  const second = await newItem(`FIT-CHUNK-B-${runId}`);
+  await replaceFitmentsForItem(admin, first.id, [
+    { makeId: null, model: "Chunk-Wigo", variant: null, yearFrom: null, yearTo: null },
+    { makeId: null, model: "Chunk-Vios", variant: null, yearFrom: 2018, yearTo: 2021 },
+  ]);
+  await replaceFitmentsForItem(admin, second.id, [
+    { makeId: null, model: "Chunk-Terra", variant: null, yearFrom: null, yearTo: null },
+  ]);
+
+  const padded: string[] = Array.from({ length: 200 }, () => randomUUID());
+  padded[0] = first.id;
+  padded[170] = second.id;
+
+  const byItem = await listFitmentsForItems(admin, padded);
+  expect(byItem.get(first.id)?.map((f) => f.model)).toEqual(["Chunk-Wigo", "Chunk-Vios"]);
+  expect(byItem.get(second.id)?.map((f) => f.model)).toEqual(["Chunk-Terra"]);
+  // Only the two real items get an entry; the 198 filler ids contribute none.
+  expect(byItem.size).toBe(2);
 });
 
 test("replaceFitmentsForItem inserts every fitment when the item has none yet", async () => {

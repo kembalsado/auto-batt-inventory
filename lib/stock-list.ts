@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { listFitmentsForItems, summarizeFitments, type ItemFitment } from "@/lib/item-fitments";
+import { listFitmentsForItems, summarizeFitments } from "@/lib/item-fitments";
 import { canSeeCost, type Role } from "@/lib/permissions";
 import { getSettings } from "@/lib/settings";
 import { isLowStockQty } from "@/lib/stock";
@@ -110,8 +110,10 @@ interface ViewerBatchRow {
  * Performance: this is a small, fixed number of bulk queries, not one
  * query per item — the exact N+1 pattern Task 12's review flagged for a
  * different page. One query lists every active item (joined to
- * categories); one query bulk-fetches every item's fitments
- * (`listFitmentsForItems`, lib/item-fitments.ts); one query reads every
+ * categories); one bulk fitments read for every item at once
+ * (`listFitmentsForItems`, lib/item-fitments.ts — internally chunked by
+ * item id and paged, so a large catalogue neither 414s nor loses rows
+ * past PostgREST's 1000-row cap); one query reads every
  * remaining batch across all of those items at once, through the
  * cost-safe `batches_for_viewer` view (the same view
  * `getItemBatchesForViewer`, lib/items.ts, reads from — see that
@@ -160,10 +162,9 @@ export async function buildStockListRows(
   const itemIds = items.map((item) => item.id);
   const showCost = canSeeCost(viewerRole, settings);
 
-  const fitmentsByItemId =
-    itemIds.length > 0
-      ? await listFitmentsForItems(supabase, itemIds)
-      : new Map<string, ItemFitment[]>();
+  // No `itemIds.length > 0` guard: listFitmentsForItems already returns an
+  // empty map without querying for an empty id list.
+  const fitmentsByItemId = await listFitmentsForItems(supabase, itemIds);
 
   const batchesByItemId = new Map<string, ViewerBatchRow[]>();
   if (itemIds.length > 0) {

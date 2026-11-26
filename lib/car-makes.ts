@@ -90,9 +90,12 @@ export async function updateCarMake(
 
 /**
  * Deletes a car make and records an audit_log entry for it.
- * The database's foreign-key constraint on `items.make_id` rejects
- * deletion if the car make is still referenced by an item, surfaced here
- * as a thrown error.
+ * The database's foreign-key constraint on `item_fitments.make_id`
+ * (supabase/migrations/0022_item_fitments.sql) rejects deletion if the
+ * car make is still referenced by any item's vehicle fitment tag,
+ * surfaced here as a thrown error. That constraint replaced the one on
+ * `items.make_id`, which no longer exists — that column was dropped in
+ * 0024_drop_item_vehicle_columns.sql once fitments became multi-valued.
  */
 export async function deleteCarMake(
   supabase: SupabaseClient,

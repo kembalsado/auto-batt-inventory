@@ -6,8 +6,8 @@ import { replaceFitmentsForItem, type FitmentInput } from "@/lib/item-fitments";
  * One `items` row. See supabase/migrations/0001_init.sql. Vehicle fitment
  * data (make/model/variant/year) no longer lives on this row — it's
  * multi-valued, in `item_fitments` (supabase/migrations/0022_item_fitments.sql,
- * 0023_backfill_and_drop_item_vehicle_columns.sql), accessed via
- * `lib/item-fitments.ts`.
+ * 0023_backfill_item_fitments.sql, 0024_drop_item_vehicle_columns.sql),
+ * accessed via `lib/item-fitments.ts`.
  */
 export interface Item {
   id: string;
@@ -39,6 +39,23 @@ export interface CreateItemInput {
  * Inserts a new item and records an audit_log entry for it. `sku` must be
  * unique — the database's unique constraint on `items.sku` rejects a
  * duplicate, surfaced here as a thrown error.
+ *
+ * The item row and its fitment rows are written by two separate
+ * statements, with no surrounding transaction (PostgREST gives one per
+ * statement, and wrapping both in a Postgres RPC was weighed and declined
+ * as a larger architectural change than this is worth — especially now
+ * that `parseFitmentsJson` rejects the malformed year data that was the
+ * most plausible cause of a fitments-write failure). The `try`/`catch`
+ * below is therefore a deliberate mitigation, not real atomicity: if the
+ * fitments write throws, the item row that was already committed is
+ * deleted again so the failed create leaves nothing behind — no ghost
+ * item holding its SKU hostage (the user's retry would otherwise fail
+ * with a confusing "duplicate SKU"), and no item visible in the catalogue
+ * with neither its tags nor an `item.created` audit entry, since
+ * `recordAudit` runs only after this point. The cleanup delete is
+ * best-effort: if IT fails too, its error is swallowed and the original
+ * fitments error is still what propagates, because that's the one that
+ * explains what actually went wrong.
  */
 export async function createItem(
   supabase: SupabaseClient,
@@ -62,7 +79,26 @@ export async function createItem(
     throw error;
   }
 
-  await replaceFitmentsForItem(supabase, data.id, input.fitments ?? []);
+  // Only called when there's something to write: a brand-new item has no
+  // existing fitments, so `replaceFitmentsForItem` with an empty list
+  // would spend a guaranteed-empty select plus a no-op on every single
+  // create. (`updateItem`'s call below stays unconditional — there an
+  // empty list genuinely means "clear this item's existing tags".)
+  if (input.fitments?.length) {
+    try {
+      await replaceFitmentsForItem(supabase, data.id, input.fitments);
+    } catch (fitmentsError) {
+      try {
+        // Best effort, deliberately: the returned `error` is not checked
+        // and a thrown one is swallowed, so that the fitments error —
+        // the one that explains the failure — is what the caller sees.
+        await supabase.from("items").delete().eq("id", data.id);
+      } catch {
+        // Intentionally empty; see above.
+      }
+      throw fitmentsError;
+    }
+  }
 
   await recordAudit(supabase, {
     actorId,

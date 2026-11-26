@@ -143,6 +143,35 @@ test("createItem with no fitments leaves the item with zero tags", async () => {
   expect(await listFitmentsForItem(supabase, item.id)).toEqual([]);
 });
 
+test("createItem leaves no orphaned item behind when the fitments write fails", async () => {
+  // The item insert and the fitments write are two separate statements
+  // with no surrounding transaction. A fitment referencing a make_id that
+  // doesn't exist violates item_fitments' FK to car_makes, so the second
+  // statement throws after the first has already committed. createItem
+  // must then delete the item it just created — otherwise the user's
+  // retry hits "duplicate SKU" on a tag-less, audit-less ghost row.
+  const supabase = createAdminClient();
+  const sku = `ITEMS-FIT-FAIL-${runId}`;
+  const missingMakeId = randomUUID();
+
+  await expect(
+    createItem(supabase, ASSISTANT_ID, {
+      sku, name: "Doomed", categoryId, unit: "pcs",
+      fitments: [{ makeId: missingMakeId, model: "Vios", variant: null, yearFrom: null, yearTo: null }],
+    })
+  ).rejects.toThrow();
+
+  const { data: survivors } = await supabase.from("items").select("id").eq("sku", sku);
+  expect(survivors).toEqual([]);
+
+  // The same sku is therefore free again — the retry a real user makes.
+  const retried = await createItem(supabase, ASSISTANT_ID, {
+    sku, name: "Doomed", categoryId, unit: "pcs",
+  });
+  createdItemIds.push(retried.id);
+  expect(retried.sku).toBe(sku);
+});
+
 test("updateItem changes an item's fields and writes an item.updated audit entry", async () => {
   const supabase = createAdminClient();
   const item = await createItem(supabase, ASSISTANT_ID, {
