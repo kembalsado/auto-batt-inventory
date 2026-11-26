@@ -155,14 +155,24 @@ export async function replaceFitmentsForItem(
 
   const toInsert = fitments.filter((f) => !f.id);
   if (toInsert.length > 0) {
+    // Postgres evaluates now() once per statement, so a bulk insert of 2+
+    // rows would otherwise give every row the exact same created_at,
+    // leaving listFitmentsForItem's "created_at asc, id asc" order to fall
+    // back on id — a random UUID unrelated to insertion order — to break
+    // the tie. That silently breaks "oldest created_at = first displayed
+    // tag" for the common case of adding multiple fitments in one save.
+    // Assigning strictly increasing timestamps ourselves, in input order,
+    // keeps the first entry of toInsert the oldest and therefore first.
+    const now = Date.now();
     const { error } = await supabase.from("item_fitments").insert(
-      toInsert.map((f) => ({
+      toInsert.map((f, i) => ({
         item_id: itemId,
         make_id: f.makeId,
         model: f.model,
         variant: f.variant,
         year_from: f.yearFrom,
         year_to: f.yearTo,
+        created_at: new Date(now + i).toISOString(),
       }))
     );
     if (error) {

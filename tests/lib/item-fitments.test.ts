@@ -119,6 +119,29 @@ test("replaceFitmentsForItem inserts every fitment when the item has none yet", 
   expect(result).toHaveLength(2);
 });
 
+test("replaceFitmentsForItem inserting 2+ fitments in one call preserves input order as created_at order, not a random id tiebreak", async () => {
+  // Regression test: a bulk insert of 2+ rows in one statement previously
+  // gave every row the exact same now()-derived created_at, so
+  // listFitmentsForItem's "created_at asc, id asc" order fell back on a
+  // random UUID tiebreak — non-deterministic in practice. Repeating this
+  // across many fresh items makes that ~50/50 coin flip reliably surface
+  // as a failure before the fix (effectively guaranteed to fail at least
+  // once across 20 runs) and reliably pass after it (strictly increasing
+  // created_at values removed the tie entirely).
+  const admin = createAdminClient();
+  for (let i = 0; i < 20; i++) {
+    const item = await newItem(`FIT-ORDER-RACE-${runId}-${i}`);
+    await replaceFitmentsForItem(admin, item.id, [
+      { makeId: null, model: "Wigo", variant: null, yearFrom: null, yearTo: null },
+      { makeId: null, model: "Terra", variant: null, yearFrom: null, yearTo: null },
+      { makeId: null, model: "Vios", variant: null, yearFrom: null, yearTo: null },
+    ]);
+
+    const fitments = await listFitmentsForItem(admin, item.id);
+    expect(fitments.map((f) => f.model)).toEqual(["Wigo", "Terra", "Vios"]);
+  }
+});
+
 test("replaceFitmentsForItem keeps an existing fitment's id and created_at when it's resubmitted with its id", async () => {
   const admin = createAdminClient();
   const item = await newItem(`FIT-KEEP-${runId}`);
