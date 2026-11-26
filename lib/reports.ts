@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { daysInMonth, firstDayOfMonth, lastDayOfMonth } from "@/lib/calendar";
+import { listFitmentsForItems, summarizeFitments } from "@/lib/item-fitments";
 
 // PostgREST's hard per-request row cap (`max_rows`, supabase/config.toml).
 // Every bulk query in this file pages by this size — looping until a page
@@ -325,23 +326,6 @@ interface ItemActivityItemRow {
   sku: string;
   name: string;
   unit: string;
-  model: string | null;
-  variant: string | null;
-  year: number | null;
-  car_makes: { name: string } | null;
-}
-
-/**
- * Same `items` row PostgREST actually returns, except `car_makes` typed as
- * the array shape the untyped Supabase client infers for a joined relation
- * (it can't tell `items -> car_makes` is a to-one join without generated
- * Database types) — only used to keep `fetchAllForIds`'s generic honest
- * about the query's real shape; cast to `ItemActivityItemRow[]` afterward,
- * same as the rest of this file does for `batches_for_viewer`/
- * `movement_allocations` rows that don't need this distinction.
- */
-interface ItemActivityItemQueryRow extends Omit<ItemActivityItemRow, "car_makes"> {
-  car_makes: { name: string }[] | null;
 }
 
 /** One non-voided movement on an `ItemActivity` row, individually. */
@@ -364,7 +348,9 @@ export interface ItemActivity {
   itemId: string;
   sku: string;
   name: string;
-  /** "Make Model Variant Year", skipping unset parts — "—" when none are set. */
+  /** First fitment tag plus a "+N" count of the rest, same display as
+   * `summarizeFitments` produces elsewhere — "—" when the item has no
+   * fitments. */
   vehicle: string;
   unit: string;
   /** Every non-voided IN/OUT movement for this item on the date, sorted
@@ -547,27 +533,25 @@ export async function getItemActivityByDate(
     return [];
   }
 
-  const itemRows = await fetchAllForIds<ItemActivityItemQueryRow>(
+  const itemRows = await fetchAllForIds<ItemActivityItemRow>(
     itemIds,
     (idChunk, offset) =>
       supabase
         .from("items")
-        .select("id, sku, name, unit, model, variant, year, car_makes(name)")
+        .select("id, sku, name, unit")
         .in("id", idChunk)
         .order("id", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1)
   );
 
   const items = itemRows as unknown as ItemActivityItemRow[];
+  const fitmentsByItemId = await listFitmentsForItems(supabase, itemIds);
 
   const activity: ItemActivity[] = items.map((item) => ({
     itemId: item.id,
     sku: item.sku,
     name: item.name,
-    vehicle:
-      [item.car_makes?.name, item.model, item.variant, item.year]
-        .filter(Boolean)
-        .join(" ") || "—",
+    vehicle: summarizeFitments(fitmentsByItemId.get(item.id) ?? []).display,
     unit: item.unit,
     movements: movementsByItemId.get(item.id) ?? [],
   }));
@@ -698,12 +682,12 @@ export async function getItemActivityByDateRange(
   // the range, not once per date, to avoid redundant lookups for an item
   // that moved on more than one day within the range.
   const allItemIds = Array.from(new Set(movements.map((m) => m.item_id)));
-  const itemRows = await fetchAllForIds<ItemActivityItemQueryRow>(
+  const itemRows = await fetchAllForIds<ItemActivityItemRow>(
     allItemIds,
     (idChunk, offset) =>
       supabase
         .from("items")
-        .select("id, sku, name, unit, model, variant, year, car_makes(name)")
+        .select("id, sku, name, unit")
         .in("id", idChunk)
         .order("id", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1)
@@ -713,6 +697,7 @@ export async function getItemActivityByDateRange(
   for (const item of items) {
     itemById.set(item.id, item);
   }
+  const fitmentsByItemId = await listFitmentsForItems(supabase, allItemIds);
 
   const dates = Array.from(movementsByDate.keys()).sort();
 
@@ -741,10 +726,7 @@ export async function getItemActivityByDateRange(
         itemId: item.id,
         sku: item.sku,
         name: item.name,
-        vehicle:
-          [item.car_makes?.name, item.model, item.variant, item.year]
-            .filter(Boolean)
-            .join(" ") || "—",
+        vehicle: summarizeFitments(fitmentsByItemId.get(item.id) ?? []).display,
         unit: item.unit,
         movements: movementsByItemId.get(itemId) ?? [],
       };
