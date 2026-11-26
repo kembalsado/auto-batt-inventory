@@ -48,7 +48,7 @@ export function ItemsTable({ rows }: { rows: StockListRow[] }) {
         row.sku.toLowerCase().includes(normalized) ||
         row.name.toLowerCase().includes(normalized) ||
         row.category.toLowerCase().includes(normalized) ||
-        row.vehicle.toLowerCase().includes(normalized)
+        row.vehicleSearchText.toLowerCase().includes(normalized)
     );
   }, [rows, debouncedQuery]);
 

@@ -5,9 +5,9 @@ import type { StockListRow } from "@/lib/stock-list";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const rows: StockListRow[] = [
-  { id: "1", sku: "B", name: "Charlie Battery", category: "Cat", qtyOnHand: 5, unit: "pcs", isLowStock: false, isActive: true, vehicle: "—" },
-  { id: "2", sku: "A", name: "Alice Battery", category: "Cat", qtyOnHand: 20, unit: "pcs", isLowStock: false, isActive: true, vehicle: "—" },
-  { id: "3", sku: "C", name: "Bob Battery", category: "Cat", qtyOnHand: 1, unit: "pcs", isLowStock: true, isActive: true, vehicle: "—" },
+  { id: "1", sku: "B", name: "Charlie Battery", category: "Cat", qtyOnHand: 5, unit: "pcs", isLowStock: false, isActive: true, vehicle: "—", vehicleSearchText: "" },
+  { id: "2", sku: "A", name: "Alice Battery", category: "Cat", qtyOnHand: 20, unit: "pcs", isLowStock: false, isActive: true, vehicle: "—", vehicleSearchText: "" },
+  { id: "3", sku: "C", name: "Bob Battery", category: "Cat", qtyOnHand: 1, unit: "pcs", isLowStock: true, isActive: true, vehicle: "—", vehicleSearchText: "" },
 ];
 
 function nameColumn() {
@@ -38,5 +38,18 @@ test("search filtering waits for the debounce delay, and dims the table meanwhil
   act(() => vi.advanceTimersByTime(200));
   expect(nameColumn()).toHaveLength(1);
   expect(screen.getByRole("table")).not.toHaveClass("opacity-60");
+  vi.useRealTimers();
+});
+
+test("search matches a vehicle tag that isn't the one displayed", () => {
+  vi.useFakeTimers();
+  const rowsWithHiddenTag = [
+    ...rows,
+    { id: "4", sku: "D", name: "Hidden Tag Item", category: "Cat", qtyOnHand: 1, unit: "pcs", isLowStock: false, isActive: true, vehicle: "Toyota Wigo +1", vehicleSearchText: "Toyota Wigo Nissan Terra 2018–2021" },
+  ];
+  render(<ItemsTable rows={rowsWithHiddenTag} />);
+  fireEvent.change(screen.getByLabelText(/search items/i), { target: { value: "Terra" } });
+  act(() => vi.advanceTimersByTime(200));
+  expect(screen.getAllByText("Hidden Tag Item")).toHaveLength(2);
   vi.useRealTimers();
 });
