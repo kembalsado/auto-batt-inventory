@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
-import { createItem, listDistinctModelsAndVariants } from "@/lib/items";
+import { createItem } from "@/lib/items";
+import { parseFitmentsJson, listDistinctModelsAndVariants } from "@/lib/item-fitments";
 import { listCategories } from "@/lib/categories";
 import { listCarMakes } from "@/lib/car-makes";
 import { isUniqueViolation } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FitmentTagEditor, type FitmentChip } from "@/app/(dashboard)/items/fitment-tag-editor";
 
 // Every field this form submits, as its raw (trimmed, still-a-string) form
 // value — round-tripped onto an error redirect via buildErrorRedirectParams
@@ -16,17 +18,17 @@ import { Label } from "@/components/ui/label";
 // the branch-wide review) — applied here too for consistency, even though
 // the Add form has no "stale saved data" to silently overwrite the way
 // Edit did; losing unsaved input on every field but SKU was still a real
-// (if lesser) annoyance.
+// (if lesser) annoyance. `fitments` is the tag editor's hidden-field JSON
+// string, round-tripped the same way as every other field — so a user who
+// adds a few vehicle tags and then hits a duplicate-SKU error gets them
+// back instead of having to re-enter them.
 interface RawItemFormFields {
   sku: string;
   name: string;
   categoryId: string;
-  makeId: string;
-  model: string;
-  variant: string;
-  year: string;
   unit: string;
   lowStockThreshold: string;
+  fitments: string;
 }
 
 function buildErrorRedirectParams(
@@ -51,25 +53,16 @@ async function addItem(formData: FormData) {
   const lowStockThreshold = lowStockThresholdRaw
     ? Number(lowStockThresholdRaw)
     : null;
-  const makeIdRaw = String(formData.get("makeId") ?? "").trim();
-  const makeId = makeIdRaw || null;
-  const modelRaw = String(formData.get("model") ?? "").trim();
-  const model = modelRaw || null;
-  const variantRaw = String(formData.get("variant") ?? "").trim();
-  const variant = variantRaw || null;
-  const yearRaw = String(formData.get("year") ?? "").trim();
-  const year = yearRaw ? Number(yearRaw) : null;
+  const fitmentsRaw = String(formData.get("fitments") ?? "[]");
+  const fitments = parseFitmentsJson(fitmentsRaw);
 
   const rawFields: RawItemFormFields = {
     sku,
     name,
     categoryId: categoryIdRaw,
-    makeId: makeIdRaw,
-    model: modelRaw,
-    variant: variantRaw,
-    year: yearRaw,
     unit: unitRaw,
     lowStockThreshold: lowStockThresholdRaw,
+    fitments: fitmentsRaw,
   };
 
   if (!sku || !name) {
@@ -102,10 +95,7 @@ async function addItem(formData: FormData) {
       categoryId,
       unit,
       lowStockThreshold,
-      makeId,
-      model,
-      variant,
-      year,
+      fitments,
     });
   } catch (error) {
     if (!isUniqueViolation(error)) {
@@ -134,12 +124,9 @@ export default async function NewItemPage({
     sku?: string;
     name?: string;
     categoryId?: string;
-    makeId?: string;
-    model?: string;
-    variant?: string;
-    year?: string;
     unit?: string;
     lowStockThreshold?: string;
+    fitments?: string;
   }>;
 }) {
   const {
@@ -147,12 +134,9 @@ export default async function NewItemPage({
     sku,
     name,
     categoryId,
-    makeId,
-    model,
-    variant,
-    year,
     unit,
     lowStockThreshold,
+    fitments: fitmentsRaw,
   } = await searchParams;
   const supabase = await createServerClient();
   const [categories, makes, { models, variants }] = await Promise.all([
@@ -162,6 +146,20 @@ export default async function NewItemPage({
   ]);
 
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
+
+  // On a fresh load there's no round-tripped `fitments` param, so the
+  // editor starts empty. On an error redirect, re-hydrate the chip list
+  // from the round-tripped JSON — each parsed entry gets a fresh client
+  // `key` here since it never had one (a round-tripped entry carries an
+  // `id` only if it already existed in the database, which can't happen on
+  // this Add form, but the mapping stays shape-compatible with
+  // `FitmentInput` either way).
+  const initialFitments: FitmentChip[] = fitmentsRaw
+    ? parseFitmentsJson(fitmentsRaw).map((fitment) => ({
+        ...fitment,
+        key: crypto.randomUUID(),
+      }))
+    : [];
 
   return (
     <div>
@@ -219,67 +217,12 @@ export default async function NewItemPage({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="makeId">Make</Label>
-          <select
-            id="makeId"
-            name="makeId"
-            defaultValue={makeId ?? ""}
-            className="h-11 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <option value="">None</option>
-            {makes.map((make) => (
-              <option key={make.id} value={make.id}>
-                {make.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="model">Model</Label>
-          <Input
-            id="model"
-            name="model"
-            list="model-suggestions"
-            defaultValue={model ?? ""}
-            placeholder="Optional"
-            className="h-11"
-          />
-          <datalist id="model-suggestions">
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="variant">Variant</Label>
-          <Input
-            id="variant"
-            name="variant"
-            list="variant-suggestions"
-            defaultValue={variant ?? ""}
-            placeholder="Optional"
-            className="h-11"
-          />
-          <datalist id="variant-suggestions">
-            {variants.map((variant) => (
-              <option key={variant} value={variant} />
-            ))}
-          </datalist>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="year">Year</Label>
-          <Input
-            id="year"
-            name="year"
-            type="number"
-            min={1900}
-            max={new Date().getFullYear() + 1}
-            defaultValue={year ?? ""}
-            placeholder="Optional"
-            className="h-11"
+          <Label>Vehicle fitment</Label>
+          <FitmentTagEditor
+            makes={makes}
+            modelSuggestions={models}
+            variantSuggestions={variants}
+            initialFitments={initialFitments}
           />
         </div>
 
