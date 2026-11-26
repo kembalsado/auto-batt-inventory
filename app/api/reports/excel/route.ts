@@ -34,15 +34,71 @@ function pad2(n: number): string {
 // the header, so none of them can let `columns` own row 1. `columns` is
 // only ever used afterward, and only for `{width}` (no `header`/`key`),
 // which doesn't touch any row's contents.
-const ITEM_DETAIL_WIDTHS = [10, 16, 28, 20, 8, 10, 14]; // Time, SKU, Name, Vehicle, Type, Qty, Cost
-const ITEM_DETAIL_HEADER = ["Time", "SKU", "Name", "Vehicle", "Type", "Qty", "Cost"];
+//
+// Type/Qty/Cost are each split into an IN sub-column and an OUT
+// sub-column (under one merged group header) rather than one shared
+// column holding both directions — so a reader can see IN and OUT
+// movements, and total IN cost vs. OUT cost, without reading every row's
+// Type cell. `itemActivityColumns` is the single source of truth for
+// which column index is which sub-column, shared by the header writer,
+// the row writer, and the totals writer so the three can never drift out
+// of alignment with each other.
+const ITEM_DETAIL_LABELS = ["Time", "SKU", "Name", "Vehicle"];
+const ITEM_DETAIL_WIDTHS = [10, 16, 28, 28, 8, 8, 6, 6, 14, 14]; // Time, SKU, Name, Vehicle, Type(IN/OUT), Qty(IN/OUT), Cost(IN/OUT)
+
+/** 1-based column indices for the IN/OUT sub-columns of each merged group,
+ * given whether a leading "Date" column (Month's flattened sheet) shifts
+ * everything right by one. */
+function itemActivityColumns(withDate: boolean) {
+  const base = withDate ? 5 : 4; // [Date,] Time, SKU, Name, Vehicle
+  return {
+    typeIn: base + 1,
+    typeOut: base + 2,
+    qtyIn: base + 3,
+    qtyOut: base + 4,
+    costIn: base + 5,
+    costOut: base + 6,
+  };
+}
+
+/** Writes the item-activity header row at `rowNumber`: single-column
+ * labels (optionally prefixed with "Date") followed by three merged
+ * 2-column groups — Type, Qty, Cost — each spanning that group's IN/OUT
+ * sub-columns from `itemActivityColumns`. Styling (bold, centered group
+ * labels) is applied before merging — exceljs folds a merged range's
+ * non-anchor cells into references to the anchor, so styling after the
+ * merge would be touching cells that no longer hold their own style. */
+function writeItemActivityHeader(sheet: ExcelJS.Worksheet, rowNumber: number, withDate: boolean) {
+  const row = sheet.getRow(rowNumber);
+  const labels = withDate ? ["Date", ...ITEM_DETAIL_LABELS] : ITEM_DETAIL_LABELS;
+  labels.forEach((label, i) => {
+    row.getCell(i + 1).value = label;
+  });
+
+  const cols = itemActivityColumns(withDate);
+  const groups: [string, number, number][] = [
+    ["Type", cols.typeIn, cols.typeOut],
+    ["Qty", cols.qtyIn, cols.qtyOut],
+    ["Cost", cols.costIn, cols.costOut],
+  ];
+  for (const [label, inCol] of groups) {
+    const cell = row.getCell(inCol);
+    cell.value = label;
+    cell.alignment = { horizontal: "center" };
+  }
+  row.font = { bold: true };
+  for (const [, inCol, outCol] of groups) {
+    sheet.mergeCells(rowNumber, inCol, rowNumber, outCol);
+  }
+}
 
 /** Writes one item-activity row per movement, across every item in
  * `items`, into `sheet` — or, when `items` is empty, a single row with
  * `emptyText` instead. `date`, when given, is prepended to each row
  * (Month view's flattened "Item Detail" sheet needs it; Day view's single-
- * date sheet doesn't). Plain positional arrays, matching whatever header
- * row the caller already wrote — see `ITEM_DETAIL_HEADER`'s column order. */
+ * date sheet doesn't). Each movement's Type/Qty/Cost land in that
+ * direction's sub-column only (see `itemActivityColumns`) — the other
+ * direction's sub-column on that row stays blank. */
 function writeItemActivityRows(
   sheet: ExcelJS.Worksheet,
   items: ItemActivity[],
@@ -56,18 +112,39 @@ function writeItemActivityRows(
 
   for (const item of items) {
     for (const movement of item.movements) {
+      const isIn = movement.type === "IN";
       const row = [
         manilaTime(movement.occurredAt),
         item.sku,
         item.name,
         item.vehicle,
-        movement.type,
-        movement.quantity,
-        movement.cost,
+        isIn ? movement.type : null,
+        isIn ? null : movement.type,
+        isIn ? movement.quantity : null,
+        isIn ? null : movement.quantity,
+        isIn ? movement.cost : null,
+        isIn ? null : movement.cost,
       ];
       sheet.addRow(date ? [date, ...row] : row);
     }
   }
+}
+
+/** Appends a totals row with `purchases`/`stockOutValue` in the Cost
+ * group's IN/OUT sub-columns respectively — the same two totals already
+ * shown in the "Purchases"/"Stock-out value" rows above the table, so
+ * this is the row-level breakdown's own readout of the same numbers
+ * rather than a recomputation that could drift from them. */
+function writeItemActivityTotals(
+  sheet: ExcelJS.Worksheet,
+  withDate: boolean,
+  purchases: number,
+  stockOutValue: number
+) {
+  const { costIn, costOut } = itemActivityColumns(withDate);
+  const row = sheet.addRow([]);
+  row.getCell(costIn).value = purchases;
+  row.getCell(costOut).value = stockOutValue;
 }
 
 /** Writes a bold `["<label>", value]` period-marker row (row 1) + a blank
@@ -108,9 +185,11 @@ export async function GET(request: Request): Promise<Response> {
     sheet.addRow(["Purchases", report.purchases]);
     sheet.addRow(["Stock-out value", report.stockOutValue]);
     sheet.addRow([]);
-    sheet.addRow(ITEM_DETAIL_HEADER);
-    sheet.getRow(6).font = { bold: true };
+    writeItemActivityHeader(sheet, 6, false);
     writeItemActivityRows(sheet, itemActivity, "No activity this day");
+    if (itemActivity.length > 0) {
+      writeItemActivityTotals(sheet, false, report.purchases, report.stockOutValue);
+    }
     sheet.columns = ITEM_DETAIL_WIDTHS.map((width) => ({ width }));
 
     filename = `reports-day-${date}.xlsx`;
@@ -134,14 +213,14 @@ export async function GET(request: Request): Promise<Response> {
 
     const itemDetailSheet = workbook.addWorksheet("Item Detail");
     writePeriodHeader(itemDetailSheet, "Month", monthLabel);
-    itemDetailSheet.addRow(["Date", ...ITEM_DETAIL_HEADER]);
-    itemDetailSheet.getRow(3).font = { bold: true };
+    writeItemActivityHeader(itemDetailSheet, 3, true);
     if (dailyItemActivity.length === 0) {
       itemDetailSheet.addRow(["No activity this month"]);
     } else {
       for (const day of dailyItemActivity) {
         writeItemActivityRows(itemDetailSheet, day.items, "No activity this day", day.date);
       }
+      writeItemActivityTotals(itemDetailSheet, true, report.purchases, report.stockOutValue);
     }
     itemDetailSheet.columns = [12, ...ITEM_DETAIL_WIDTHS].map((width) => ({ width }));
 
