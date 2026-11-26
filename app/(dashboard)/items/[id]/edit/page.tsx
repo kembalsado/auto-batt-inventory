@@ -282,7 +282,13 @@ export default async function EditItemPage({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label>Vehicle fitment</Label>
+          {/*
+            Not a <Label>: the fitment editor below is a group of several
+            controls, not one labelable form control, so a <label> with no
+            htmlFor and nothing wrapped would point at nothing. Same text,
+            same type styling as the real labels around it.
+          */}
+          <p className="text-sm leading-none font-medium">Vehicle fitment</p>
           <FitmentTagEditor
             makes={makes}
             modelSuggestions={models}

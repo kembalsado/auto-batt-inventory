@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,13 +30,30 @@ export interface FitmentTagEditorProps {
   modelSuggestions: string[];
   variantSuggestions: string[];
   initialFitments: FitmentChip[];
-  /** Hidden input's `name`, so a page can embed more than one of these. */
+  /**
+   * Hidden input's `name` — the form field the serialized chip list is
+   * submitted under, for a page whose Server Action reads it under a
+   * different name than the default "fitments". Not a multi-instance
+   * knob: this component's internal element ids (`fitment-make`,
+   * `fitment-model`, …) are hardcoded, so two editors on one page would
+   * collide on DOM ids regardless of `fieldName`. No page does that.
+   */
   fieldName?: string;
 }
 
 function toNullableNumber(raw: string): number | null {
   return raw === "" ? null : Number(raw);
 }
+
+/**
+ * Year bounds, matching the single Year field these two replaced: no
+ * vehicle predates 1900, and next model year is legitimately on sale.
+ * `parseFitmentsJson` (lib/item-fitments.ts) re-applies the same bounds
+ * server-side — these attributes only guide the browser's own number
+ * input, and a hand-crafted POST never passes through them at all.
+ */
+const MIN_YEAR = 1900;
+const MAX_YEAR = new Date().getFullYear() + 1;
 
 export function FitmentTagEditor({
   makes,
@@ -54,8 +71,26 @@ export function FitmentTagEditor({
 
   const makeNameById = new Map(makes.map((make) => [make.id, make.name]));
 
+  // "Something was entered in the add-row" — the one condition both the
+  // Add button's `disabled` state and `handleAdd`'s own guard use, so the
+  // button can never be clickable in a state the handler would refuse.
+  // `yearTo` counts: a lone Year-to is a valid entry (it gets mirrored
+  // into Year-from below), and omitting it here used to make the button
+  // silently reject one.
+  const canAdd = Boolean(makeId || model.trim() || variant.trim() || yearFrom || yearTo);
+
   function handleAdd() {
-    if (!makeId && !model.trim() && !variant.trim() && !yearFrom) {
+    if (!canAdd) {
+      return;
+    }
+
+    // An inverted range (2022 → 2018) is refused outright rather than
+    // "corrected" by swapping: which field the user mistyped isn't
+    // knowable, and formatFitment would otherwise render the nonsense
+    // "2022–2018". Silent no-op, the same convention the empty-row guard
+    // above uses — the Add button stays enabled and the entered values
+    // stay in place for the user to correct.
+    if (yearFrom && yearTo && Number(yearFrom) > Number(yearTo)) {
       return;
     }
 
@@ -91,6 +126,24 @@ export function FitmentTagEditor({
     setVariant("");
     setYearFrom("");
     setYearTo("");
+  }
+
+  /**
+   * Enter inside any add-row text/number input adds the tag instead of
+   * submitting the page's form. These inputs sit inside the Add/Edit Item
+   * <form>, whose only `type="submit"` control is Save, and "Add" is a
+   * `type="button"` — so without this, Enter triggers implicit form
+   * submission: the item saves and whatever tag was being typed is
+   * silently discarded. (The Make <select> needs no handler; Enter on a
+   * select doesn't produce this, and a select's own keyboard handling
+   * shouldn't be intercepted.)
+   */
+  function handleAddKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") {
+      return;
+    }
+    e.preventDefault();
+    handleAdd();
   }
 
   function handleRemove(key: string) {
@@ -164,6 +217,7 @@ export function FitmentTagEditor({
             list="fitment-model-suggestions"
             value={model}
             onChange={(e) => setModel(e.target.value)}
+            onKeyDown={handleAddKeyDown}
             placeholder="Optional"
             className="w-32"
           />
@@ -181,6 +235,7 @@ export function FitmentTagEditor({
             list="fitment-variant-suggestions"
             value={variant}
             onChange={(e) => setVariant(e.target.value)}
+            onKeyDown={handleAddKeyDown}
             placeholder="Optional"
             className="w-32"
           />
@@ -196,8 +251,11 @@ export function FitmentTagEditor({
           <Input
             id="fitment-year-from"
             type="number"
+            min={MIN_YEAR}
+            max={MAX_YEAR}
             value={yearFrom}
             onChange={(e) => setYearFrom(e.target.value)}
+            onKeyDown={handleAddKeyDown}
             placeholder="Optional"
             className="w-24"
           />
@@ -208,14 +266,17 @@ export function FitmentTagEditor({
           <Input
             id="fitment-year-to"
             type="number"
+            min={MIN_YEAR}
+            max={MAX_YEAR}
             value={yearTo}
             onChange={(e) => setYearTo(e.target.value)}
+            onKeyDown={handleAddKeyDown}
             placeholder="Optional"
             className="w-24"
           />
         </div>
 
-        <Button type="button" variant="outline" onClick={handleAdd}>
+        <Button type="button" variant="outline" onClick={handleAdd} disabled={!canAdd}>
           Add
         </Button>
       </div>
