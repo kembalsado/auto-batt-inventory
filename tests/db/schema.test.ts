@@ -255,3 +255,85 @@ test("items has make_id, model, variant, year columns, all nullable", async () =
   await supabase.from("items").delete().eq("id", data!.id);
   await supabase.from("categories").delete().eq("id", category!.id);
 });
+
+test("item_fitments has item_id, make_id (nullable), model, variant, year_from, year_to columns", async () => {
+  const supabase = createAdminClient();
+  const { data: category } = await supabase
+    .from("categories").insert({ name: `fitment-schema-cat-${Date.now()}` }).select().single();
+  const { data: item } = await supabase
+    .from("items").insert({ sku: `FITMENT-SCHEMA-${Date.now()}`, name: "x", category_id: category!.id })
+    .select().single();
+  const { data, error } = await supabase
+    .from("item_fitments")
+    .insert({ item_id: item!.id })
+    .select("id, item_id, make_id, model, variant, year_from, year_to")
+    .single();
+  expect(error).toBeNull();
+  expect(data).toMatchObject({ item_id: item!.id, make_id: null, model: null, variant: null, year_from: null, year_to: null });
+  await supabase.from("items").delete().eq("id", item!.id);
+  await supabase.from("categories").delete().eq("id", category!.id);
+});
+
+test("deleting an item cascades to delete its item_fitments rows", async () => {
+  const supabase = createAdminClient();
+  const { data: category } = await supabase
+    .from("categories").insert({ name: `fitment-cascade-cat-${Date.now()}` }).select().single();
+  const { data: item } = await supabase
+    .from("items").insert({ sku: `FITMENT-CASCADE-${Date.now()}`, name: "x", category_id: category!.id })
+    .select().single();
+  const { data: fitment } = await supabase
+    .from("item_fitments").insert({ item_id: item!.id, model: "Vios" }).select().single();
+
+  await supabase.from("items").delete().eq("id", item!.id);
+
+  const { data: remaining } = await supabase.from("item_fitments").select("id").eq("id", fitment!.id).maybeSingle();
+  expect(remaining).toBeNull();
+  await supabase.from("categories").delete().eq("id", category!.id);
+});
+
+test("RLS: any authenticated user can select, insert, update, and delete item_fitments", async () => {
+  const admin = createAdminClient();
+  const runId = randomUUID().slice(0, 8);
+  const email = `test-item-fitments-rls-${runId}@example.com`;
+  const password = "test-password-123";
+
+  const { data: category } = await admin
+    .from("categories").insert({ name: `fitment-rls-cat-${runId}` }).select().single();
+  const { data: item } = await admin
+    .from("items").insert({ sku: `FITMENT-RLS-${runId}`, name: "x", category_id: category!.id })
+    .select().single();
+
+  const { data: userData } = await admin.auth.admin.createUser({
+    email, password, email_confirm: true, // no role metadata — a plain authenticated user, same as items_select/insert/update/delete_authenticated
+  });
+  const userId = userData!.user!.id;
+
+  try {
+    const anonClient = createAnonClient();
+    await anonClient.auth.signInWithPassword({ email, password });
+
+    const { data: inserted, error: insertError } = await anonClient
+      .from("item_fitments").insert({ item_id: item!.id, model: "Vios" }).select().single();
+    expect(insertError).toBeNull();
+
+    const { data: selected, error: selectError } = await anonClient
+      .from("item_fitments").select("*").eq("id", inserted!.id);
+    expect(selectError).toBeNull();
+    expect(selected).toHaveLength(1);
+
+    const { data: updated, error: updateError } = await anonClient
+      .from("item_fitments").update({ model: "Vios Updated" }).eq("id", inserted!.id).select();
+    expect(updateError).toBeNull();
+    expect(updated?.[0]?.model).toBe("Vios Updated");
+
+    const { data: deleted, error: deleteError } = await anonClient
+      .from("item_fitments").delete().eq("id", inserted!.id).select();
+    expect(deleteError).toBeNull();
+    expect(deleted).toHaveLength(1);
+  } finally {
+    await admin.from("items").delete().eq("id", item!.id);
+    await admin.from("categories").delete().eq("id", category!.id);
+    await admin.from("profiles").delete().eq("id", userId);
+    await admin.auth.admin.deleteUser(userId);
+  }
+});
