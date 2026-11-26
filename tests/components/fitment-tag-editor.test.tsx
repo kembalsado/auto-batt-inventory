@@ -23,6 +23,27 @@ test("Add appends a new chip (no id) with the entered fields, and updates the hi
   expect(JSON.parse(hidden.value)).toEqual([{ id: undefined, makeId: null, model: "Terra", variant: null, yearFrom: null, yearTo: null }]);
 });
 
+test("Add mirrors a lone Year-from value into Year-to instead of leaving a literal null", () => {
+  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Avanza" } });
+  fireEvent.change(screen.getByLabelText(/year from/i), { target: { value: "2020" } });
+  fireEvent.click(screen.getByRole("button", { name: /add/i }));
+  expect(screen.getByText(/Avanza/)).toBeInTheDocument();
+  expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
+  const hidden = container.querySelector('input[name="fitments"]') as HTMLInputElement;
+  expect(JSON.parse(hidden.value)).toEqual([{ id: undefined, makeId: null, model: "Avanza", variant: null, yearFrom: 2020, yearTo: 2020 }]);
+});
+
+test("Add mirrors a lone Year-to value into Year-from, the symmetric case", () => {
+  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Avanza" } });
+  fireEvent.change(screen.getByLabelText(/year to/i), { target: { value: "2020" } });
+  fireEvent.click(screen.getByRole("button", { name: /add/i }));
+  expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
+  const hidden = container.querySelector('input[name="fitments"]') as HTMLInputElement;
+  expect(JSON.parse(hidden.value)).toEqual([{ id: undefined, makeId: null, model: "Avanza", variant: null, yearFrom: 2020, yearTo: 2020 }]);
+});
+
 test("Add does nothing when every field is empty", () => {
   render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.click(screen.getByRole("button", { name: /add/i }));

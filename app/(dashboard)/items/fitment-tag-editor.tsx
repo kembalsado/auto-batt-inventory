@@ -59,6 +59,22 @@ export function FitmentTagEditor({
       return;
     }
 
+    // A fitment's year is always a complete range (formatFitment,
+    // replaceFitmentsForItem, and the backfill migration all assume this —
+    // "equal for a single year" when there's just one). The add-row lets a
+    // user fill only one of the two year fields, so a lone value is
+    // mirrored into the other side here, the only place a fitment's year
+    // data originates from user input. Left unmirrored, formatFitment
+    // renders e.g. "2020–null" since it builds a range whenever
+    // yearFrom !== yearTo, including when one side is null.
+    let effectiveYearFrom = yearFrom;
+    let effectiveYearTo = yearTo;
+    if (yearFrom && !yearTo) {
+      effectiveYearTo = yearFrom;
+    } else if (yearTo && !yearFrom) {
+      effectiveYearFrom = yearTo;
+    }
+
     setChips((prev) => [
       ...prev,
       {
@@ -66,8 +82,8 @@ export function FitmentTagEditor({
         makeId: makeId || null,
         model: model.trim() || null,
         variant: variant.trim() || null,
-        yearFrom: toNullableNumber(yearFrom),
-        yearTo: toNullableNumber(yearTo),
+        yearFrom: toNullableNumber(effectiveYearFrom),
+        yearTo: toNullableNumber(effectiveYearTo),
       },
     ]);
     setMakeId("");
