@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { FitmentTagEditor } from "@/app/(dashboard)/items/fitment-tag-editor";
 
 const makes = [{ id: "m1", name: "Toyota" }];
@@ -8,10 +8,29 @@ test("starts with the initial chips rendered and serialized into the hidden fiel
     <FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]}
       initialFitments={[{ key: "k1", id: "f1", makeId: "m1", model: "Vios", variant: null, yearFrom: 2018, yearTo: 2018 }]} />
   );
-  expect(screen.getByText(/Toyota/)).toBeInTheDocument();
-  expect(screen.getByText(/Vios/)).toBeInTheDocument();
+  // Scoped to the chip itself, not a bare screen.getByText(/Toyota/) —
+  // the Make select below also has an option literally reading "Toyota",
+  // so an unscoped query is ambiguous (finds both). Asserting on the
+  // chip's own container keeps this test unambiguous without resorting to
+  // an accessible-name-only check that wouldn't catch the chip rendering
+  // the wrong text.
+  const chip = container.querySelector('[data-slot="badge"]') as HTMLElement;
+  expect(chip).toHaveTextContent(/Toyota/);
+  expect(chip).toHaveTextContent(/Vios/);
   const hidden = container.querySelector('input[name="fitments"]') as HTMLInputElement;
   expect(JSON.parse(hidden.value)).toEqual([{ id: "f1", makeId: "m1", model: "Vios", variant: null, yearFrom: 2018, yearTo: 2018 }]);
+});
+
+test("the Make select renders each make's name as real visible option text, not just an accessible label", () => {
+  render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const select = screen.getByLabelText(/^make$/i) as HTMLSelectElement;
+  // getByText matches DOM textContent, not the `label` attribute — this
+  // fails if an <option> carries its name only via `label` with no text
+  // child (the bug: the option's accessible name is set, but a real
+  // browser renders nothing visible in the dropdown).
+  const option = within(select).getByText("Toyota") as HTMLOptionElement;
+  expect(option.tagName).toBe("OPTION");
+  expect(option.value).toBe("m1");
 });
 
 test("Add appends a new chip (no id) with the entered fields, and updates the hidden field", () => {

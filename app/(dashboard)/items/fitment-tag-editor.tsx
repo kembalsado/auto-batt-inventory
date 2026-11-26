@@ -149,16 +149,10 @@ export function FitmentTagEditor({
             className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <option value="">None</option>
-            {/*
-             * No text child: the make's name is set via the `label`
-             * attribute instead, which browsers render identically as the
-             * option's visible/accessible text. Done so this element's
-             * textContent stays empty — otherwise it duplicates a chip
-             * Badge's rendered name (e.g. both showing "Toyota"), and
-             * RTL's getByText(/Toyota/) finds two matches instead of one.
-             */}
             {makes.map((make) => (
-              <option key={make.id} value={make.id} label={make.name} />
+              <option key={make.id} value={make.id}>
+                {make.name}
+              </option>
             ))}
           </select>
         </div>
