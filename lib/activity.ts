@@ -52,6 +52,15 @@ export const ACTIONS = [
   // delete action — missing from this list until the final review, same
   // gap as item.updated/user.created above.
   "car_make.deleted",
+  // Written by createCarModel (lib/car-models.ts) for the Models management
+  // page's "Add model" action.
+  "car_model.created",
+  // Written by updateCarModel (lib/car-models.ts) for the Models page's
+  // inline rename.
+  "car_model.updated",
+  // Written by deleteCarModel (lib/car-models.ts) for the Models page's
+  // delete action.
+  "car_model.deleted",
 ];
 
 /**
