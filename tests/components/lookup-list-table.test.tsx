@@ -192,3 +192,16 @@ test("a failed rename shows the server's error message inline", async () => {
     expect(screen.getByText("That name already exists.")).toBeInTheDocument()
   );
 });
+
+test("renders an item's secondary label when present, and nothing extra when absent", () => {
+  render(
+    <LookupListTable
+      items={[{ id: "1", name: "Vios", secondary: "Toyota" }, { id: "2", name: "Batteries" }]}
+      apiBasePath="/api/models"
+      noun="model"
+      isOwner={false}
+      emptyLabel="No models yet."
+    />
+  );
+  expect(screen.getByText("Toyota")).toBeInTheDocument();
+});

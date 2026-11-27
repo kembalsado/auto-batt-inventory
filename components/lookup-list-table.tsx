@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 export interface LookupListItem {
   id: string;
   name: string;
+  secondary?: string;
 }
 
 /**
@@ -155,7 +156,14 @@ export function LookupListTable({
                 </>
               ) : (
                 <>
-                  <span>{item.name}</span>
+                  <div className="flex flex-col">
+                    <span>{item.name}</span>
+                    {item.secondary && (
+                      <span className="text-xs text-muted-foreground">
+                        {item.secondary}
+                      </span>
+                    )}
+                  </div>
                   {isOwner && (
                     <div className="flex shrink-0 gap-1.5">
                       <Button
