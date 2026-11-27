@@ -436,3 +436,20 @@ test("RLS: an owner can update and delete a car_model directly; an assistant can
     await admin.auth.admin.deleteUser(assistantUser!.user!.id);
   }
 });
+
+test("seed migration populated Toyota and at least one of its models", async () => {
+  const supabase = createAdminClient();
+  const { data: toyota } = await supabase.from("car_makes")
+    .select("id").eq("name", "Toyota").single();
+  expect(toyota).not.toBeNull();
+
+  const { data: vios } = await supabase.from("car_models")
+    .select("id").eq("make_id", toyota!.id).eq("name", "Vios").single();
+  expect(vios).not.toBeNull();
+});
+
+test("car_makes.name has a live unique constraint, which is what makes the migration's own ON CONFLICT clause meaningful", async () => {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("car_makes").insert({ name: "Toyota" });
+  expect(error).not.toBeNull();
+});
