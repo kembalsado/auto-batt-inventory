@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar } from "@/components/sidebar";
 
 // Sidebar reads the active route via next/navigation's usePathname (a
@@ -57,11 +57,34 @@ test("both roles see a Reports link", () => {
   expect(screen.getByText("Reports")).toBeInTheDocument();
 });
 
-test("both roles see a Makes link", () => {
+test("both roles see a Makes link once the Fitment group is expanded", () => {
   mockPathname = "/";
   const { unmount } = render(<Sidebar role="owner" />);
+  fireEvent.click(screen.getByText("Fitment"));
   expect(screen.getByText("Makes")).toBeInTheDocument();
   unmount();
+  mockPathname = "/";
   render(<Sidebar role="assistant" />);
+  fireEvent.click(screen.getByText("Fitment"));
   expect(screen.getByText("Makes")).toBeInTheDocument();
+});
+
+test("the Fitment group is collapsed by default and expands on click, revealing Models", () => {
+  mockPathname = "/";
+  render(<Sidebar role="owner" />);
+  expect(screen.queryByText("Models")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Fitment"));
+  expect(screen.getByText("Models")).toBeInTheDocument();
+});
+
+test("the Fitment group auto-expands when the current route is one of its children", () => {
+  mockPathname = "/models";
+  render(<Sidebar role="owner" />);
+  expect(screen.getByText("Models")).toBeInTheDocument();
+});
+
+test("Categories stays a plain top-level link, not nested under Fitment", () => {
+  mockPathname = "/";
+  render(<Sidebar role="owner" />);
+  expect(screen.getByText("Categories")).toBeInTheDocument();
 });

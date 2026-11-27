@@ -18,6 +18,8 @@ import {
   Settings,
   Menu,
   X,
+  ChevronDown,
+  ChevronRight,
   type LucideIcon,
 } from "lucide-react";
 import { isOwnerOnlyRoute, type Role } from "@/lib/permissions";
@@ -26,17 +28,30 @@ import { SignOutButton } from "@/components/sign-out-button";
 interface NavLink {
   href: string;
   label: string;
+  icon?: LucideIcon;
+}
+
+interface NavGroup {
+  label: string;
   icon: LucideIcon;
+  children: NavLink[];
 }
 
 // Order matches the brief: shared links first, then owner-only links.
 // Whether a link is owner-only is derived from isOwnerOnlyRoute rather
 // than flagged per-entry, so the nav and the route guard can't drift.
-const SHARED_LINKS: NavLink[] = [
+const SHARED_LINKS: (NavLink | NavGroup)[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/items", label: "Items", icon: Package },
   { href: "/categories", label: "Categories", icon: Tags },
-  { href: "/makes", label: "Makes", icon: Car },
+  {
+    label: "Fitment",
+    icon: Car,
+    children: [
+      { href: "/makes", label: "Makes" },
+      { href: "/models", label: "Models" },
+    ],
+  },
   { href: "/stock-list", label: "Stock List", icon: ClipboardList },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/reports", label: "Reports", icon: BarChart3 },
@@ -74,9 +89,54 @@ function NavItem({
           : "flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
       }
     >
-      <Icon className="size-4.5 shrink-0" aria-hidden="true" />
+      {Icon && <Icon className="size-4.5 shrink-0" aria-hidden="true" />}
       {link.label}
     </Link>
+  );
+}
+
+function NavGroupItem({
+  group,
+  pathname,
+  onNavigate,
+  expanded,
+  onToggle,
+}: {
+  group: NavGroup;
+  pathname: string;
+  onNavigate: () => void;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = group.icon;
+  const open =
+    expanded || group.children.some((child) => isActive(pathname, child.href));
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
+      >
+        <Icon className="size-4.5 shrink-0" aria-hidden="true" />
+        <span className="flex-1 text-left">{group.label}</span>
+        <Chevron className="size-4 shrink-0" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1 pl-6">
+          {group.children.map((child) => (
+            <NavItem
+              key={child.href}
+              link={child}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -99,6 +159,20 @@ function NavContent({
   const ownerLinks = OWNER_LINKS.filter(
     (link) => role === "owner" || !isOwnerOnlyRoute(link.href)
   );
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    () => new Set()
+  );
+  const toggleGroup = (label: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  };
 
   return (
     <>
@@ -113,14 +187,25 @@ function NavContent({
         />
       </div>
       <nav className="flex flex-col gap-1">
-        {SHARED_LINKS.map((link) => (
-          <NavItem
-            key={link.href}
-            link={link}
-            pathname={pathname}
-            onNavigate={onNavigate}
-          />
-        ))}
+        {SHARED_LINKS.map((link) =>
+          "children" in link ? (
+            <NavGroupItem
+              key={link.label}
+              group={link}
+              pathname={pathname}
+              onNavigate={onNavigate}
+              expanded={expandedGroups.has(link.label)}
+              onToggle={() => toggleGroup(link.label)}
+            />
+          ) : (
+            <NavItem
+              key={link.href}
+              link={link}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          )
+        )}
         {ownerLinks.length > 0 && (
           <>
             <div className="mt-4 mb-1 px-3 text-[10px] font-semibold tracking-wider text-white/55 uppercase">
