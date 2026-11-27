@@ -325,3 +325,114 @@ test("RLS: any authenticated user can select, insert, update, and delete item_fi
     await admin.auth.admin.deleteUser(userId);
   }
 });
+
+test("car_models has make_id (FK, not null), name, created_at, unique on (make_id, name)", async () => {
+  const supabase = createAdminClient();
+  const { data: make } = await supabase.from("car_makes")
+    .insert({ name: `schema-make-${Date.now()}` }).select().single();
+  const { data, error } = await supabase.from("car_models")
+    .insert({ make_id: make!.id, name: "Vios" })
+    .select("id, make_id, name, created_at").single();
+  expect(error).toBeNull();
+  expect(data).toMatchObject({ make_id: make!.id, name: "Vios" });
+
+  const { error: dupError } = await supabase.from("car_models")
+    .insert({ make_id: make!.id, name: "Vios" });
+  expect(dupError).not.toBeNull();
+
+  await supabase.from("car_models").delete().eq("id", data!.id);
+  await supabase.from("car_makes").delete().eq("id", make!.id);
+});
+
+test("deleting a car_make cascades to delete its car_models", async () => {
+  const supabase = createAdminClient();
+  const { data: make } = await supabase.from("car_makes")
+    .insert({ name: `cascade-make-${Date.now()}` }).select().single();
+  const { data: model } = await supabase.from("car_models")
+    .insert({ make_id: make!.id, name: "Cascade Model" }).select().single();
+
+  await supabase.from("car_makes").delete().eq("id", make!.id);
+
+  const { data: remaining } = await supabase.from("car_models")
+    .select("id").eq("id", model!.id).maybeSingle();
+  expect(remaining).toBeNull();
+});
+
+test("RLS: an owner can update and delete a car_model directly; an assistant cannot", async () => {
+  const admin = createAdminClient();
+  const runId = randomUUID().slice(0, 8);
+
+  const { data: make } = await admin
+    .from("car_makes")
+    .insert({ name: `rls-make-${runId}` })
+    .select()
+    .single();
+
+  const { data: model } = await admin
+    .from("car_models")
+    .insert({ make_id: make!.id, name: `rls-model-${runId}` })
+    .select()
+    .single();
+
+  const { data: ownerUser } = await admin.auth.admin.createUser({
+    email: `test-rls-model-owner-${runId}@example.com`,
+    password: "test-password-123",
+    email_confirm: true,
+    user_metadata: { role: "owner" },
+  });
+  const { data: assistantUser } = await admin.auth.admin.createUser({
+    email: `test-rls-model-assistant-${runId}@example.com`,
+    password: "test-password-123",
+    email_confirm: true,
+  });
+
+  try {
+    const assistantClient = createAnonClient();
+    await assistantClient.auth.signInWithPassword({
+      email: `test-rls-model-assistant-${runId}@example.com`,
+      password: "test-password-123",
+    });
+    const { data: assistantUpdateData } = await assistantClient
+      .from("car_models")
+      .update({ name: `rls-model-${runId}-blocked` })
+      .eq("id", model!.id)
+      .select();
+    expect(assistantUpdateData).toEqual([]);
+
+    const { data: assistantDeleteData } = await assistantClient
+      .from("car_models")
+      .delete()
+      .eq("id", model!.id)
+      .select();
+    expect(assistantDeleteData).toEqual([]);
+
+    const ownerClient = createAnonClient();
+    await ownerClient.auth.signInWithPassword({
+      email: `test-rls-model-owner-${runId}@example.com`,
+      password: "test-password-123",
+    });
+    const { data: ownerUpdateData, error: ownerUpdateError } = await ownerClient
+      .from("car_models")
+      .update({ name: `rls-model-${runId}-renamed` })
+      .eq("id", model!.id)
+      .select();
+    expect(ownerUpdateError).toBeNull();
+    expect(ownerUpdateData?.[0]?.name).toBe(`rls-model-${runId}-renamed`);
+
+    const { data: ownerDeleteData } = await ownerClient
+      .from("car_models")
+      .delete()
+      .eq("id", model!.id)
+      .select();
+    expect(ownerDeleteData).toHaveLength(1);
+  } finally {
+    await admin.from("car_models").delete().eq("id", model!.id);
+    await admin.from("car_makes").delete().eq("id", make!.id);
+    await admin
+      .from("profiles")
+      .delete()
+      .in("id", [ownerUser!.user!.id, assistantUser!.user!.id]);
+    await admin.auth.admin.deleteUser(ownerUser!.user!.id);
+    await admin.auth.admin.deleteUser(assistantUser!.user!.id);
+  }
+});
