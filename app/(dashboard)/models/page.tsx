@@ -5,8 +5,8 @@ import { createCarModel, listCarModels } from "@/lib/car-models";
 import { listCarMakes } from "@/lib/car-makes";
 import { isUniqueViolation, isForeignKeyViolation } from "@/lib/errors";
 import { getRole } from "@/lib/permissions";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
 import { LookupListTable } from "@/components/lookup-list-table";
 
 async function addModel(formData: FormData) {
@@ -126,9 +126,9 @@ export default async function ModelsPage({
           placeholder="Model name"
           className="h-11 w-full sm:w-64"
         />
-        <Button type="submit" size="touch">
+        <SubmitButton size="touch" pendingLabel="Adding…">
           Add model
-        </Button>
+        </SubmitButton>
       </form>
 
       {errorMessage && (

@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { recordStockIn } from "@/lib/movements";
 import { manilaToday, isFutureDate } from "@/lib/date";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/components/submit-button";
 
 async function addStockIn(formData: FormData) {
   "use server";
@@ -134,9 +134,9 @@ export function StockInForm({
         <Input id="in-note" name="note" placeholder="Optional" className="h-11" />
       </div>
 
-      <Button type="submit" size="touch" className="mt-2 w-full">
+      <SubmitButton size="touch" className="mt-2 w-full" pendingLabel="Recording…">
         Record stock IN
-      </Button>
+      </SubmitButton>
     </form>
   );
 }

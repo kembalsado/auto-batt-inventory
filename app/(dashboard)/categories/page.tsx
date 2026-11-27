@@ -4,8 +4,8 @@ import { createServerClient } from "@/lib/supabase/server";
 import { createCategory, listCategories } from "@/lib/categories";
 import { isUniqueViolation } from "@/lib/errors";
 import { getRole } from "@/lib/permissions";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
 import { LookupListTable } from "@/components/lookup-list-table";
 
 async function addCategory(formData: FormData) {
@@ -85,9 +85,9 @@ export default async function CategoriesPage({
           placeholder="Category name"
           className="h-11 w-full sm:w-64"
         />
-        <Button type="submit" size="touch">
+        <SubmitButton size="touch" pendingLabel="Adding…">
           Add category
-        </Button>
+        </SubmitButton>
       </form>
 
       {errorMessage && (

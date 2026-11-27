@@ -5,8 +5,8 @@ import { createCarMake, listCarMakes } from "@/lib/car-makes";
 import { listCarModels } from "@/lib/car-models";
 import { isUniqueViolation } from "@/lib/errors";
 import { getRole } from "@/lib/permissions";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
 import { LookupListTable } from "@/components/lookup-list-table";
 
 async function addMake(formData: FormData) {
@@ -97,9 +97,9 @@ export default async function MakesPage({
           placeholder="Make name"
           className="h-11 w-full sm:w-64"
         />
-        <Button type="submit" size="touch">
+        <SubmitButton size="touch" pendingLabel="Adding…">
           Add make
-        </Button>
+        </SubmitButton>
       </form>
 
       {errorMessage && (

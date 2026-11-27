@@ -1,5 +1,33 @@
-import { LogOut } from "lucide-react";
+"use client";
+
+import { useFormStatus } from "react-dom";
+import { LogOut, Loader2 } from "lucide-react";
 import { signOutAction } from "@/lib/actions/sign-out";
+
+/**
+ * The form's actual submit control, split out from `SignOutButton` below
+ * because `useFormStatus` only reads pending state as a descendant of the
+ * `<form>` it reports on, not from the component that renders the form
+ * itself.
+ */
+function SignOutSubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white disabled:pointer-events-none disabled:opacity-60"
+    >
+      {pending ? (
+        <Loader2 className="size-4.5 shrink-0 animate-spin" aria-hidden="true" />
+      ) : (
+        <LogOut className="size-4.5 shrink-0" aria-hidden="true" />
+      )}
+      {pending ? "Signing out…" : "Sign out"}
+    </button>
+  );
+}
 
 /**
  * Ends the current session and sends the user back to /login.
@@ -24,13 +52,7 @@ import { signOutAction } from "@/lib/actions/sign-out";
 export function SignOutButton() {
   return (
     <form action={signOutAction}>
-      <button
-        type="submit"
-        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/85 transition-colors hover:bg-brand-green-light/60 hover:text-white"
-      >
-        <LogOut className="size-4.5 shrink-0" aria-hidden="true" />
-        Sign out
-      </button>
+      <SignOutSubmitButton />
     </form>
   );
 }

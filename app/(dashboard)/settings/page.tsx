@@ -1,8 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "@/lib/supabase/server";
 import { getSettings, updateSettings } from "@/lib/settings";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
@@ -116,9 +116,9 @@ export default async function SettingsPage() {
           />
         </div>
 
-        <Button type="submit" size="touch" className="mt-2">
+        <SubmitButton size="touch" className="mt-2" pendingLabel="Saving…">
           Save settings
-        </Button>
+        </SubmitButton>
       </form>
     </div>
   );

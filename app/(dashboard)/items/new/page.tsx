@@ -6,8 +6,8 @@ import { listCategories } from "@/lib/categories";
 import { listCarMakes } from "@/lib/car-makes";
 import { listCarModels } from "@/lib/car-models";
 import { isUniqueViolation } from "@/lib/errors";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/submit-button";
 import { Label } from "@/components/ui/label";
 import { FitmentTagEditor, type FitmentChip } from "@/app/(dashboard)/items/fitment-tag-editor";
 
@@ -253,9 +253,9 @@ export default async function NewItemPage({
           />
         </div>
 
-        <Button type="submit" size="touch" className="mt-2">
+        <SubmitButton size="touch" className="mt-2" pendingLabel="Adding…">
           Add item
-        </Button>
+        </SubmitButton>
       </form>
     </div>
   );

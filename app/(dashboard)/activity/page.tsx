@@ -11,6 +11,7 @@ import { listItems } from "@/lib/items";
 import { manilaDateTime } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { SortLinkHeader } from "@/components/sortable-header";
+import { SubmitButton } from "@/components/submit-button";
 
 /**
  * Owner-only activity/audit log screen (gated by `isOwnerOnlyRoute` in the
@@ -65,7 +66,11 @@ export default async function ActivityPage({
     <div>
       <h1 className="text-2xl font-semibold text-brand-ink">Activity</h1>
 
-      <form className="mt-6 flex flex-wrap items-end gap-3" method="get">
+      <form
+        action="/activity"
+        method="get"
+        className="mt-6 flex flex-wrap items-end gap-3"
+      >
         <label className="flex flex-col gap-1 text-sm text-brand-ink">
           Search
           <input
@@ -125,9 +130,9 @@ export default async function ActivityPage({
           </select>
         </label>
 
-        <Button type="submit" size="touch">
+        <SubmitButton size="touch" pendingLabel="Filtering…">
           Filter
-        </Button>
+        </SubmitButton>
         {hasFilters && (
           <Button asChild variant="outline" size="touch">
             <a href="/activity">Clear</a>
