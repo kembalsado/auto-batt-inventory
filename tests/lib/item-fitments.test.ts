@@ -9,7 +9,7 @@ import {
   listFitmentsForItem,
   listFitmentsForItems,
   replaceFitmentsForItem,
-  listDistinctModelsAndVariants,
+  listDistinctVariants,
 } from "@/lib/item-fitments";
 import { randomUUID } from "node:crypto";
 
@@ -249,14 +249,14 @@ test("replaceFitmentsForItem with an empty array deletes every existing fitment 
   expect(result).toEqual([]);
 });
 
-test("listDistinctModelsAndVariants reads from item_fitments, not items", async () => {
+test("listDistinctVariants returns sorted distinct variant values from item_fitments", async () => {
   const item = await newItem(`FIT-DISTINCT-${runId}`);
   const admin = createAdminClient();
   await replaceFitmentsForItem(admin, item.id, [
     { makeId: null, model: `Fitments-Vios-${runId}`, variant: `Fitments-E-${runId}`, yearFrom: null, yearTo: null },
   ]);
 
-  const { models, variants } = await listDistinctModelsAndVariants(admin);
-  expect(models).toContain(`Fitments-Vios-${runId}`);
+  const variants = await listDistinctVariants(admin);
   expect(variants).toContain(`Fitments-E-${runId}`);
+  expect(Array.isArray(variants)).toBe(true);
 });

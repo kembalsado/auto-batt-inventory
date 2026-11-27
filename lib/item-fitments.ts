@@ -445,39 +445,33 @@ export function parseFitmentsJson(raw: string): FitmentInput[] {
 }
 
 /**
- * Distinct, non-empty `model` and `variant` values across all fitments,
- * sorted, for `<datalist>` suggestions on the fitment editor (Tasks 8/9).
+ * Distinct, non-empty `variant` values across all fitments, sorted, for
+ * `<datalist>` suggestions on the fitment editor (Task 9). Model suggestions
+ * now come from the `car_models` table instead (see `lib/car-models.ts`).
  *
  * Moved here from `lib/items.ts` (which read `items.model`/`items.variant`
  * before per-item make/model/variant/year columns were replaced by
  * multi-row fitments) — see that function's original docstring for why
- * both columns are fetched in one unfiltered query and filtered/deduped
- * independently rather than server-side with `.not(...).not(...)`.
+ * the column is fetched in an unfiltered query and filtered/deduped
+ * independently rather than server-side with `.not(...)`.
  */
-export async function listDistinctModelsAndVariants(
+export async function listDistinctVariants(
   supabase: SupabaseClient
-): Promise<{ models: string[]; variants: string[] }> {
-  const { data, error } = await supabase.from("item_fitments").select("model, variant");
+): Promise<string[]> {
+  const { data, error } = await supabase.from("item_fitments").select("variant");
 
   if (error) {
     throw error;
   }
 
-  const rows = (data ?? []) as { model: string | null; variant: string | null }[];
+  const rows = (data ?? []) as { variant: string | null }[];
 
-  const models = new Set<string>();
   const variants = new Set<string>();
   for (const row of rows) {
-    if (row.model) {
-      models.add(row.model);
-    }
     if (row.variant) {
       variants.add(row.variant);
     }
   }
 
-  return {
-    models: Array.from(models).sort(),
-    variants: Array.from(variants).sort(),
-  };
+  return Array.from(variants).sort();
 }
