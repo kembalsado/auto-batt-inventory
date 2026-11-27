@@ -183,9 +183,12 @@ test("Model suggestions are filtered to the selected Make", () => {
   render(<FitmentTagEditor makes={testMakes} models={models} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText("Make"), { target: { value: "toyota-id" } });
   const datalist = document.getElementById("fitment-model-suggestions");
-  expect(datalist?.textContent).toContain("Vios");
-  expect(datalist?.textContent).toContain("Innova");
-  expect(datalist?.textContent).not.toContain("Civic");
+  const values = Array.from(datalist!.querySelectorAll("option")).map(
+    (option) => option.getAttribute("value")
+  );
+  expect(values).toContain("Vios");
+  expect(values).toContain("Innova");
+  expect(values).not.toContain("Civic");
 });
 
 test("Model suggestions show every model, deduped, when no Make is selected", () => {
@@ -200,6 +203,9 @@ test("Model suggestions show every model, deduped, when no Make is selected", ()
   ];
   render(<FitmentTagEditor makes={testMakes} models={models} variantSuggestions={[]} initialFitments={[]} />);
   const datalist = document.getElementById("fitment-model-suggestions");
-  expect(datalist?.textContent).toContain("Vios");
-  expect(datalist?.textContent).toContain("Civic");
+  const values = Array.from(datalist!.querySelectorAll("option")).map(
+    (option) => option.getAttribute("value")
+  );
+  expect(values).toContain("Vios");
+  expect(values).toContain("Civic");
 });

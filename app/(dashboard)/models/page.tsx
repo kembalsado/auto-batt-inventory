@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { createCarModel, listCarModels } from "@/lib/car-models";
 import { listCarMakes } from "@/lib/car-makes";
-import { isUniqueViolation } from "@/lib/errors";
+import { isUniqueViolation, isForeignKeyViolation } from "@/lib/errors";
 import { getRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,20 +35,33 @@ async function addModel(formData: FormData) {
   // letting Postgres's unique-constraint violation escape the Server
   // Action crashed to Next.js's generic error page. Flag then redirect, so
   // `redirect()`'s own NEXT_REDIRECT throw isn't caught by this handler.
+  //
+  // A foreign-key violation on `make_id` gets the same treatment: this
+  // form's make list is rendered from a page load that may be stale by
+  // the time it's submitted — if the make was deleted in another tab (or
+  // another browser) in the meantime, submitting with its now-gone id
+  // would otherwise crash the same way.
   let duplicateName = false;
+  let invalidMake = false;
   try {
     await createCarModel(supabase, user.id, makeId, name);
   } catch (error) {
-    if (!isUniqueViolation(error)) {
+    if (isUniqueViolation(error)) {
+      duplicateName = true;
+    } else if (isForeignKeyViolation(error)) {
+      invalidMake = true;
+    } else {
       throw error;
     }
-    duplicateName = true;
   }
 
   if (duplicateName) {
     redirect(
       `/models?error=duplicate-name&name=${encodeURIComponent(name)}&makeId=${encodeURIComponent(makeId)}`
     );
+  }
+  if (invalidMake) {
+    redirect(`/models?error=invalid-make&name=${encodeURIComponent(name)}`);
   }
 
   revalidatePath("/models");
@@ -59,6 +72,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   "missing-make": "Choose a make.",
   "missing-name": "Enter a model name.",
   "duplicate-name": "That model already exists for this make.",
+  "invalid-make": "That make no longer exists. Pick another.",
 };
 
 export default async function ModelsPage({

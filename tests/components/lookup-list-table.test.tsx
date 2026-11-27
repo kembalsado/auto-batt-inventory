@@ -194,7 +194,7 @@ test("a failed rename shows the server's error message inline", async () => {
 });
 
 test("renders an item's secondary label when present, and nothing extra when absent", () => {
-  render(
+  const { container } = render(
     <LookupListTable
       items={[{ id: "1", name: "Vios", secondary: "Toyota" }, { id: "2", name: "Batteries" }]}
       apiBasePath="/api/models"
@@ -204,4 +204,42 @@ test("renders an item's secondary label when present, and nothing extra when abs
     />
   );
   expect(screen.getByText("Toyota")).toBeInTheDocument();
+
+  // "Batteries" has no `secondary` — its row renders only the one <span>
+  // holding its name, with no second <span> for a secondary label. Only
+  // one secondary <span> should exist in the whole document: "Toyota".
+  const batteriesRow = screen.getByText("Batteries").closest("li")!;
+  expect(batteriesRow.querySelectorAll("span")).toHaveLength(1);
+  expect(container.querySelectorAll(".text-muted-foreground")).toHaveLength(1);
+});
+
+test("the delete confirm dialog includes deleteWarning when present, and omits it when absent", () => {
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <LookupListTable
+      items={[
+        { id: "1", name: "Toyota", deleteWarning: "This will also delete its 3 model(s)." },
+        { id: "2", name: "Honda" },
+      ]}
+      apiBasePath="/api/makes"
+      noun="make"
+      isOwner={true}
+      emptyLabel="No makes yet."
+    />
+  );
+
+  fireEvent.click(screen.getAllByRole("button", { name: /delete/i })[0]);
+  expect(confirmSpy).toHaveBeenCalledWith(
+    `Delete make "Toyota"? This can't be undone. This will also delete its 3 model(s).`
+  );
+
+  fireEvent.click(screen.getAllByRole("button", { name: /delete/i })[1]);
+  expect(confirmSpy).toHaveBeenCalledWith(
+    `Delete make "Honda"? This can't be undone.`
+  );
+
+  expect(fetchMock).not.toHaveBeenCalled();
 });

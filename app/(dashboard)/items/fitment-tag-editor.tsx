@@ -226,7 +226,7 @@ export function FitmentTagEditor({
               ? models.filter((m) => m.makeId === makeId).map((m) => m.name)
               : Array.from(new Set(models.map((m) => m.name))).sort()
             ).map((suggestion) => (
-              <option key={suggestion} value={suggestion}>{suggestion}</option>
+              <option key={suggestion} value={suggestion} />
             ))}
           </datalist>
         </div>

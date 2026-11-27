@@ -10,6 +10,14 @@ export interface LookupListItem {
   id: string;
   name: string;
   secondary?: string;
+  /**
+   * Extra sentence appended to the delete confirm dialog, for a lookup
+   * row whose deletion has a side effect beyond itself (e.g. a car make
+   * that cascades to delete its car_models). Omitted entirely for a plain
+   * lookup row — Categories/Models pass nothing, so their confirm text is
+   * unchanged.
+   */
+  deleteWarning?: string;
 }
 
 /**
@@ -89,7 +97,9 @@ export function LookupListTable({
 
   async function deleteItem(item: LookupListItem) {
     const confirmed = window.confirm(
-      `Delete ${noun} "${item.name}"? This can't be undone.`
+      `Delete ${noun} "${item.name}"? This can't be undone.${
+        item.deleteWarning ? ` ${item.deleteWarning}` : ""
+      }`
     );
     if (!confirmed) return;
 

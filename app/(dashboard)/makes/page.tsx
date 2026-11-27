@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { createCarMake, listCarMakes } from "@/lib/car-makes";
+import { listCarModels } from "@/lib/car-models";
 import { isUniqueViolation } from "@/lib/errors";
 import { getRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,18 @@ export default async function MakesPage({
 }) {
   const { error, name } = await searchParams;
   const supabase = await createServerClient();
-  const makes = await listCarMakes(supabase);
+  const [makes, models] = await Promise.all([
+    listCarMakes(supabase),
+    listCarModels(supabase),
+  ]);
+
+  const modelCountByMakeId = new Map<string, number>();
+  for (const model of models) {
+    modelCountByMakeId.set(
+      model.makeId,
+      (modelCountByMakeId.get(model.makeId) ?? 0) + 1
+    );
+  }
 
   const {
     data: { user },
@@ -100,7 +112,17 @@ export default async function MakesPage({
       )}
 
       <LookupListTable
-        items={makes}
+        items={makes.map((make) => {
+          const count = modelCountByMakeId.get(make.id) ?? 0;
+          return {
+            id: make.id,
+            name: make.name,
+            deleteWarning:
+              count > 0
+                ? `This will also delete its ${count} model(s).`
+                : undefined,
+          };
+        })}
         apiBasePath="/api/makes"
         noun="make"
         isOwner={isOwner}
