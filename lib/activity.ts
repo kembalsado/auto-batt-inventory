@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The fixed set of `action` values any mutating task writes (see
-// lib/categories.ts, lib/car-makes.ts, lib/items.ts, lib/settings.ts, and
-// the SQL functions in supabase/migrations/0006-0008 for
+// lib/categories.ts, lib/car-makes.ts, lib/car-models.ts, lib/items.ts,
+// lib/settings.ts, and the SQL functions in supabase/migrations/0006-0008 for
 // record_stock_in/record_stock_out/void_movement). Listed explicitly,
 // rather than derived from a `select distinct` query, so the filter always
 // offers every known action type even on a freshly-seeded, near-empty

@@ -102,6 +102,20 @@ export async function deleteCarMake(
   actorId: string,
   id: string
 ): Promise<void> {
+  // Counted BEFORE the delete: `car_models.make_id` cascades on delete
+  // (supabase/migrations/0025_car_models.sql), so Postgres silently wipes
+  // out every model under this make with no audit trail of its own. This
+  // count is the only record that it happened, so it's folded into this
+  // function's own audit summary below.
+  const { count: modelCount, error: countError } = await supabase
+    .from("car_models")
+    .select("id", { count: "exact", head: true })
+    .eq("make_id", id);
+
+  if (countError) {
+    throw countError;
+  }
+
   const { data, error } = await supabase
     .from("car_makes")
     .delete()
@@ -113,11 +127,16 @@ export async function deleteCarMake(
     throw error;
   }
 
+  const modelSuffix =
+    modelCount && modelCount > 0
+      ? ` (and its ${modelCount} model(s))`
+      : "";
+
   await recordAudit(supabase, {
     actorId,
     action: "car_make.deleted",
     entityType: "car_make",
     entityId: id,
-    summary: `Deleted car make ${data.name}`,
+    summary: `Deleted car make ${data.name}${modelSuffix}`,
   });
 }

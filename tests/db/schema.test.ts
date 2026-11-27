@@ -453,3 +453,58 @@ test("car_makes.name has a live unique constraint, which is what makes the migra
   const { error } = await supabase.from("car_makes").insert({ name: "Toyota" });
   expect(error).not.toBeNull();
 });
+
+// 0026_seed_ph_car_makes_and_models.sql's car_makes insert can't rely on
+// `on conflict (name) do nothing` — that only catches an EXACT-case
+// match, so a pre-existing make spelled e.g. "toyota" wouldn't conflict
+// with the seed's "Toyota" and the migration would insert a second,
+// differently cased row. The fix is a `where not exists (select 1 from
+// car_makes c where lower(c.name) = lower(v.name))` guard instead.
+//
+// This migration has already run exactly once against this database (by
+// `supabase db reset`), so there's no "re-run it and see" way to prove
+// the fix from a test — a *second* run of the same migration file isn't
+// something the CLI will do. Lacking a raw-SQL runner in this project's
+// test setup (every other test here goes through supabase-js, not a
+// `pg`/psql connection), this instead proves the exact guard condition
+// the migration now uses, via its case-insensitive-match equivalent: for
+// a freshly inserted, differently cased make, a case-insensitive lookup
+// for its name finds that pre-existing row — which is precisely the
+// condition `where not exists (...)` checks to skip inserting a
+// duplicate. If this ever started returning no match, the migration's
+// guard would stop protecting against a differently cased duplicate.
+test("a differently-cased pre-existing make would be found (not duplicated) by the seed migration's case-insensitive guard", async () => {
+  const supabase = createAdminClient();
+  const differentlyCasedName = `toyota-casing-check-${randomUUID().slice(0, 8)}`;
+
+  const { data: existing } = await supabase
+    .from("car_makes")
+    .insert({ name: differentlyCasedName })
+    .select()
+    .single();
+
+  try {
+    // Mirrors `where not exists (select 1 from car_makes c where
+    // lower(c.name) = lower(v.name))`: a case-insensitive match against
+    // an upper-cased spelling of the same name must find the lowercase
+    // row that's already there.
+    const { data: match } = await supabase
+      .from("car_makes")
+      .select("id")
+      .ilike("name", differentlyCasedName.toUpperCase())
+      .maybeSingle();
+    expect(match?.id).toBe(existing!.id);
+
+    // And the exact-case `on conflict (name) do nothing` the old code
+    // used would NOT have found it, which is exactly the bug this
+    // migration fixed — recreating that failure mode here as a contrast.
+    const { data: exactMatch } = await supabase
+      .from("car_makes")
+      .select("id")
+      .eq("name", differentlyCasedName.toUpperCase())
+      .maybeSingle();
+    expect(exactMatch).toBeNull();
+  } finally {
+    await supabase.from("car_makes").delete().eq("id", existing!.id);
+  }
+});

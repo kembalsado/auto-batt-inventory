@@ -63,9 +63,11 @@ export async function PATCH(
 /**
  * DELETE /api/models/[id] — owner-only. Deletes a car model
  * (lib/car-models.ts's `deleteCarModel`). Same owner-only defense in
- * depth as PATCH above. No foreign-key violation check needed: the
- * database's cascade on car_models.make_id ensures nothing can hold
- * a reference to a model.
+ * depth as PATCH above. No foreign-key violation check needed: no table
+ * has a foreign key TO car_models, so a model delete can never be
+ * rejected by an FK violation. (The cascade on car_models.make_id runs
+ * the other direction — deleting a MAKE takes its models with it; it
+ * says nothing about deleting a model itself.)
  */
 export async function DELETE(
   request: Request,

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCarMake, listCarMakes, updateCarMake, deleteCarMake } from "@/lib/car-makes";
+import { createCarModel } from "@/lib/car-models";
 import { createCategory } from "@/lib/categories";
 import { createItem } from "@/lib/items";
 import { replaceFitmentsForItem } from "@/lib/item-fitments";
@@ -127,6 +128,47 @@ test("deleteCarMake removes an unused car make and records an audit log entry", 
     .eq("action", "car_make.deleted")
     .single();
   expect(log?.summary).toContain(`Audi-${runId}`);
+});
+
+test("deleteCarMake's audit summary mentions the model count when the make has models", async () => {
+  const supabase = createAdminClient();
+  const make = await createCarMake(supabase, OWNER_ID, `Lexus-${runId}`);
+  const model1 = await createCarModel(supabase, OWNER_ID, make.id, `ES-${runId}`);
+  const model2 = await createCarModel(supabase, OWNER_ID, make.id, `RX-${runId}`);
+
+  await deleteCarMake(supabase, OWNER_ID, make.id);
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", make.id)
+    .eq("action", "car_make.deleted")
+    .single();
+  expect(log?.summary).toContain(`Lexus-${runId}`);
+  expect(log?.summary).toContain("2 model(s)");
+
+  // The cascade already deleted both models along with the make.
+  const { data: remainingModels } = await supabase
+    .from("car_models")
+    .select("id")
+    .in("id", [model1.id, model2.id]);
+  expect(remainingModels).toHaveLength(0);
+});
+
+test("deleteCarMake's audit summary omits any model mention when the make has no models", async () => {
+  const supabase = createAdminClient();
+  const make = await createCarMake(supabase, OWNER_ID, `Jeep-${runId}`);
+
+  await deleteCarMake(supabase, OWNER_ID, make.id);
+
+  const { data: log } = await supabase
+    .from("audit_log")
+    .select("*")
+    .eq("entity_id", make.id)
+    .eq("action", "car_make.deleted")
+    .single();
+  expect(log?.summary).toBe(`Deleted car make Jeep-${runId}`);
+  expect(log?.summary).not.toContain("model");
 });
 
 test("deleteCarMake rejects deleting a car make that's still referenced by an item", async () => {

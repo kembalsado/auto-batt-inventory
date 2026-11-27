@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordAudit } from "@/lib/audit";
 
-/** One `car_models` row. See supabase/migrations/0017_car_models.sql. */
+/** One `car_models` row. See supabase/migrations/0025_car_models.sql. */
 export interface CarModel {
   id: string;
   makeId: string;
@@ -109,9 +109,10 @@ export async function updateCarModel(
 
 /**
  * Deletes a car model and records an audit_log entry for it.
- * The database's foreign-key constraints may reject deletion if the
- * car model is still referenced by any item's vehicle fitment tag,
- * surfaced here as a thrown error.
+ * Unlike `deleteCarMake`, this can never be rejected by a foreign-key
+ * violation: nothing references `car_models.id` — `item_fitments.model`
+ * stays free text (the design's Approach A), so no row anywhere holds a
+ * reference to this id that Postgres would need to protect.
  */
 export async function deleteCarModel(
   supabase: SupabaseClient,
