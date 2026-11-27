@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { createItem } from "@/lib/items";
-import { parseFitmentsJson, listDistinctModelsAndVariants } from "@/lib/item-fitments";
+import { parseFitmentsJson, listDistinctVariants } from "@/lib/item-fitments";
 import { listCategories } from "@/lib/categories";
 import { listCarMakes } from "@/lib/car-makes";
+import { listCarModels } from "@/lib/car-models";
 import { isUniqueViolation } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,10 +140,11 @@ export default async function NewItemPage({
     fitments: fitmentsRaw,
   } = await searchParams;
   const supabase = await createServerClient();
-  const [categories, makes, { models, variants }] = await Promise.all([
+  const [categories, makes, models, variants] = await Promise.all([
     listCategories(supabase),
     listCarMakes(supabase),
-    listDistinctModelsAndVariants(supabase),
+    listCarModels(supabase),
+    listDistinctVariants(supabase),
   ]);
 
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
@@ -226,7 +228,7 @@ export default async function NewItemPage({
           <p className="text-sm leading-none font-medium">Vehicle fitment</p>
           <FitmentTagEditor
             makes={makes}
-            modelSuggestions={models}
+            models={models}
             variantSuggestions={variants}
             initialFitments={initialFitments}
           />
