@@ -27,7 +27,7 @@ export interface FitmentChip {
 
 export interface FitmentTagEditorProps {
   makes: { id: string; name: string }[];
-  modelSuggestions: string[];
+  models: { id: string; makeId: string; name: string }[];
   variantSuggestions: string[];
   initialFitments: FitmentChip[];
   /**
@@ -57,7 +57,7 @@ const MAX_YEAR = new Date().getFullYear() + 1;
 
 export function FitmentTagEditor({
   makes,
-  modelSuggestions,
+  models,
   variantSuggestions,
   initialFitments,
   fieldName = "fitments",
@@ -222,8 +222,11 @@ export function FitmentTagEditor({
             className="w-32"
           />
           <datalist id="fitment-model-suggestions">
-            {modelSuggestions.map((suggestion) => (
-              <option key={suggestion} value={suggestion} />
+            {(makeId
+              ? models.filter((m) => m.makeId === makeId).map((m) => m.name)
+              : Array.from(new Set(models.map((m) => m.name))).sort()
+            ).map((suggestion) => (
+              <option key={suggestion} value={suggestion}>{suggestion}</option>
             ))}
           </datalist>
         </div>

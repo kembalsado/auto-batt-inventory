@@ -5,7 +5,7 @@ const makes = [{ id: "m1", name: "Toyota" }];
 
 test("starts with the initial chips rendered and serialized into the hidden field", () => {
   const { container } = render(
-    <FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]}
+    <FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]}
       initialFitments={[{ key: "k1", id: "f1", makeId: "m1", model: "Vios", variant: null, yearFrom: 2018, yearTo: 2018 }]} />
   );
   // Scoped to the chip itself, not a bare screen.getByText(/Toyota/) —
@@ -22,7 +22,7 @@ test("starts with the initial chips rendered and serialized into the hidden fiel
 });
 
 test("the Make select renders each make's name as real visible option text, not just an accessible label", () => {
-  render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   const select = screen.getByLabelText(/^make$/i) as HTMLSelectElement;
   // getByText matches DOM textContent, not the `label` attribute — this
   // fails if an <option> carries its name only via `label` with no text
@@ -34,7 +34,7 @@ test("the Make select renders each make's name as real visible option text, not 
 });
 
 test("Add appends a new chip (no id) with the entered fields, and updates the hidden field", () => {
-  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const { container } = render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Terra" } });
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
   expect(screen.getByText(/Terra/)).toBeInTheDocument();
@@ -43,7 +43,7 @@ test("Add appends a new chip (no id) with the entered fields, and updates the hi
 });
 
 test("Add mirrors a lone Year-from value into Year-to instead of leaving a literal null", () => {
-  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const { container } = render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Avanza" } });
   fireEvent.change(screen.getByLabelText(/year from/i), { target: { value: "2020" } });
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
@@ -54,7 +54,7 @@ test("Add mirrors a lone Year-from value into Year-to instead of leaving a liter
 });
 
 test("Add mirrors a lone Year-to value into Year-from, the symmetric case", () => {
-  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const { container } = render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Avanza" } });
   fireEvent.change(screen.getByLabelText(/year to/i), { target: { value: "2020" } });
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
@@ -64,13 +64,13 @@ test("Add mirrors a lone Year-to value into Year-from, the symmetric case", () =
 });
 
 test("Add does nothing when every field is empty", () => {
-  render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
   expect(screen.queryByRole("button", { name: /remove/i })).not.toBeInTheDocument();
 });
 
 test("Add is disabled while the add-row is empty and enabled once any field is filled", () => {
-  render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   const add = screen.getByRole("button", { name: /add/i });
   expect(add).toBeDisabled();
   fireEvent.change(screen.getByLabelText(/year to/i), { target: { value: "2020" } });
@@ -80,7 +80,7 @@ test("Add is disabled while the add-row is empty and enabled once any field is f
 test("Add accepts a Year-to-only entry, mirroring it into Year-from", () => {
   // The empty-row guard used to omit yearTo, so a lone Year-to was
   // silently rejected even though the mirroring logic handles that case.
-  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const { container } = render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText(/year to/i), { target: { value: "2020" } });
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
   const hidden = container.querySelector('input[name="fitments"]') as HTMLInputElement;
@@ -88,7 +88,7 @@ test("Add accepts a Year-to-only entry, mirroring it into Year-from", () => {
 });
 
 test("both Year inputs carry the same 1900..next-year bounds the old single Year field had", () => {
-  render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   const nextYear = String(new Date().getFullYear() + 1);
   for (const label of [/year from/i, /year to/i]) {
     const input = screen.getByLabelText(label);
@@ -98,7 +98,7 @@ test("both Year inputs carry the same 1900..next-year bounds the old single Year
 });
 
 test("Add refuses an inverted year range instead of adding a nonsense 2022–2018 chip", () => {
-  const { container } = render(<FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />);
+  const { container } = render(<FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />);
   fireEvent.change(screen.getByLabelText(/model/i), { target: { value: "Vios" } });
   fireEvent.change(screen.getByLabelText(/year from/i), { target: { value: "2022" } });
   fireEvent.change(screen.getByLabelText(/year to/i), { target: { value: "2018" } });
@@ -124,7 +124,7 @@ test("pressing Enter in the Model input adds the chip instead of submitting the 
   const onSubmit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
   const { container } = render(
     <form onSubmit={onSubmit}>
-      <FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />
+      <FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />
       <button type="submit">Save</button>
     </form>
   );
@@ -148,7 +148,7 @@ test("Enter adds the chip from the Variant, Year-from and Year-to inputs too", (
   ];
   for (const [label, value] of cases) {
     const { container, unmount } = render(
-      <FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]} initialFitments={[]} />
+      <FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]} initialFitments={[]} />
     );
     const input = screen.getByLabelText(label);
     fireEvent.change(input, { target: { value } });
@@ -161,11 +161,45 @@ test("Enter adds the chip from the Variant, Year-from and Year-to inputs too", (
 
 test("removing a chip drops it from both the display and the hidden field", () => {
   const { container } = render(
-    <FitmentTagEditor makes={makes} modelSuggestions={[]} variantSuggestions={[]}
+    <FitmentTagEditor makes={makes} models={[]} variantSuggestions={[]}
       initialFitments={[{ key: "k1", id: "f1", makeId: "m1", model: "Vios", variant: null, yearFrom: 2018, yearTo: 2018 }]} />
   );
   fireEvent.click(screen.getByRole("button", { name: /remove/i }));
   expect(screen.queryByText(/Vios/)).not.toBeInTheDocument();
   const hidden = container.querySelector('input[name="fitments"]') as HTMLInputElement;
   expect(JSON.parse(hidden.value)).toEqual([]);
+});
+
+test("Model suggestions are filtered to the selected Make", () => {
+  const testMakes = [
+    { id: "toyota-id", name: "Toyota" },
+    { id: "honda-id", name: "Honda" },
+  ];
+  const models = [
+    { id: "m1", makeId: "toyota-id", name: "Vios" },
+    { id: "m2", makeId: "toyota-id", name: "Innova" },
+    { id: "m3", makeId: "honda-id", name: "Civic" },
+  ];
+  render(<FitmentTagEditor makes={testMakes} models={models} variantSuggestions={[]} initialFitments={[]} />);
+  fireEvent.change(screen.getByLabelText("Make"), { target: { value: "toyota-id" } });
+  const datalist = document.getElementById("fitment-model-suggestions");
+  expect(datalist?.textContent).toContain("Vios");
+  expect(datalist?.textContent).toContain("Innova");
+  expect(datalist?.textContent).not.toContain("Civic");
+});
+
+test("Model suggestions show every model, deduped, when no Make is selected", () => {
+  const testMakes = [
+    { id: "toyota-id", name: "Toyota" },
+    { id: "honda-id", name: "Honda" },
+  ];
+  const models = [
+    { id: "m1", makeId: "toyota-id", name: "Vios" },
+    { id: "m2", makeId: "toyota-id", name: "Innova" },
+    { id: "m3", makeId: "honda-id", name: "Civic" },
+  ];
+  render(<FitmentTagEditor makes={testMakes} models={models} variantSuggestions={[]} initialFitments={[]} />);
+  const datalist = document.getElementById("fitment-model-suggestions");
+  expect(datalist?.textContent).toContain("Vios");
+  expect(datalist?.textContent).toContain("Civic");
 });
