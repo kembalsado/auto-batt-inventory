@@ -10,14 +10,19 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     // Vitest's own default excludes (node_modules, dist, etc.) don't cover
-    // .worktrees/ — a nested checkout with its own tests/ and node_modules.
-    // Without this, running `npm test` from the main checkout also picks
-    // up the worktree's stale copy of every test file and a second,
-    // conflicting React install (surfaces as "Cannot read properties of
-    // null (reading 'useContext')" from next/link).
+    // .worktrees/ or .claude/worktrees/ — nested checkouts with their own
+    // tests/ and node_modules (the former from the manual `git worktree
+    // add` fallback, the latter from the harness's own EnterWorktree
+    // tool — this project has used both). Without this, running `npm
+    // test` from the main checkout also picks up each worktree's stale
+    // copy of every test file and a second, conflicting React install
+    // (surfaces as "Cannot read properties of null (reading
+    // 'useContext'/'useState')" from next/link or any component using a
+    // hook).
     exclude: [
       "**/node_modules/**",
       "**/.worktrees/**",
+      "**/.claude/worktrees/**",
       "**/.superpowers/**",
       "**/dist/**",
       "**/.{idea,git,cache,output,temp}/**",
